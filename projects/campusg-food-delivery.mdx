@@ -1,0 +1,288 @@
+---
+title: CampusG - Food Delivery Platform for Schools
+shortTitle: "CampusG Food Delivery"
+description: A full-stack food delivery platform with 6+ containerised microservices, Saga orchestration via Kafka and Temporal, Stripe Connect payments, and event-driven architecture.
+image: /images/projects/campusg-cover.png
+date: "2025-04-10"
+authors:
+  - shariff-rashid
+tags:
+  [
+    "Backend",
+    "Frontend",
+    "Cloud",
+    "React",
+    "Flask",
+    "Kafka",
+    "Temporal",
+    "PostgreSQL",
+    "Docker",
+    "AWS",
+    "Solution Architecture",
+    "Microservices",
+  ]
+projectType: "SWE"
+highlights:
+  - 6+ containerised microservices with dedicated PostgreSQL databases and Docker
+  - Saga orchestration with Kafka (pub-sub) and Temporal (deterministic workflows) including compensation rollbacks
+  - Stripe Connect split payments, Clerk OAuth, and Grafana observability
+---
+
+Project grade received: "A+"
+
+- [Presentation Slides](https://www.canva.com/design/DAGj2Ah01mg/nbcJJ35tYtrgFy21fwEQiw/view?utm_content=DAGj2Ah01mg&utm_campaign=designshare&utm_medium=link2&utm_source=uniquelinks&utlId=h1e8a42bb5b)
+
+- [Source Code](https://www.github.com/shareeep/campusg)
+
+## Overview
+
+Developed as part of our Enterprise Solution Development (ESD/IS213) module, CampusG is a microservices-based application that hosts a campus food delivery service.
+
+Our platform connects customers placing orders with runners who deliver them.
+
+## Demo:
+
+### Landing Page & Sign-in Flow
+
+<div className="flex justify-center my-8">
+  <Image
+    src="/images/projects/campusg-lp-signin.gif"
+    width="800"
+    height="450"
+    alt="CampusG landing page & signin"
+    className="rounded-lg shadow-md"
+  />
+</div>
+
+### Role-Selector (Image)
+
+We colour coded the roles to be blue for placing orders, and green for delivering orders.
+
+<div className="flex justify-center my-8">
+  <Image
+    src="/images/projects/campusg-role-selector.png"
+    width="800"
+    height="450"
+    alt="CampusG landing page & signin"
+    className="rounded-lg shadow-md"
+  />
+</div>
+
+### Placing an Order:
+
+After adding the order details, the place order button will trigger the "Create Order Saga". It sends off the work to the backend, and returns a HTTP 202 Code (Accepted). The user is loaded to the order history page to view the order details at a glance.
+
+<div className="flex justify-center my-8">
+  <Image
+    src="/images/projects/campusg-create-order-saga.gif"
+    width="800"
+    height="450"
+    alt="CampusG placing an order demonstration"
+    className="rounded-lg shadow-md"
+  />
+</div>
+
+### Accepting an Order & Receiving Status Updates:
+
+Via the green profile (runner), accepting an order via the available orders page will allow the runner to fulfil the order, and provide updates on the status of the order. The accept order button on the initial frame triggers the "Accept Order Saga".
+
+<div className="flex justify-center my-8">
+  <Image
+    src="/images/projects/campusg-accept-order-saga.gif"
+    width="800"
+    height="450"
+    alt="CampusG accepting an order demonstration"
+    className="rounded-lg shadow-md"
+  />
+</div>
+
+### Completing an Order:
+
+After going through all the required status updates, the runner can confirm the delivery of the item, triggering the "Complete Order Saga".
+
+<div className="flex justify-center my-8">
+  <Image
+    src="/images/projects/campusg-complete-order-saga.gif"
+    width="800"
+    height="450"
+    alt="CampusG completing an order demonstration"
+    className="rounded-lg shadow-md"
+  />
+</div>
+
+### User's Dashboard (Image):
+
+Users can see their expenditure and their earnings, as well as make profile adjustments. Here, users can also add their payment method.
+
+<div className="flex justify-center my-8">
+  <Image
+    src="/images/projects/campusg-profile-page.png"
+    width="800"
+    height="450"
+    alt="CampusG user dashboard"
+    className="rounded-lg shadow-md"
+  />
+</div>
+
+## Technical Breakdown
+
+### System Architecture & Tech Stack
+
+The following table summarizes the core components of CampusG, the technologies used, and their respective roles within the system:
+
+| Component                 | Technology / Tool             | Role / Description                                          |
+| ------------------------- | ----------------------------- | ----------------------------------------------------------- |
+| **Frontend**              | React + Vite (Bolt.new)       | User interface for customers and runners                    |
+| **User Service**          | Flask, Clerk Auth, Stripe API | Profile management, authentication, and payment integration |
+| **Order Service**         | Flask                         | Manages order lifecycle and states                          |
+| **Payment Service**       | Flask, Stripe API             | Handles payment processing and fund transfers               |
+| **Notification Service**  | Kafka, Grafana                | Event logging and monitoring                                |
+| **Timer Service**         | Outsystems (REST API)         | Manages order timeouts and cancellations                    |
+| **Message Broker**        | Kafka                         | Event-driven communication between microservices            |
+| **Workflow Orchestrator** | Temporal                      | Orchestrates Accept/Complete Order sagas                    |
+| **Database**              | PostgreSQL (per microservice) | Persistent storage for each microservice                    |
+| **Containerization**      | Docker                        | Service isolation and deployment                            |
+| **External Services**     | Clerk, Stripe, Outsystems     | Authentication, payments, and timer management              |
+
+### Saga Orchestrators
+
+---
+
+#### 1. Create Order Saga (Flask/Kafka)
+
+Coordinates the order creation flow through Kafka events, interfacing with Order, User, and Payment services, and communicating with the Timer Service via HTTP. Handles compensation actions for failures.
+
+| Step | Action                                                                    |
+| ---- | ------------------------------------------------------------------------- |
+| 1    | Customer places order                                                     |
+| 2    | Saga coordinates order creation                                           |
+| 3    | Retrieves user payment info                                               |
+| 4    | Authorizes payment via Stripe                                             |
+| 5    | Updates order status                                                      |
+| 6    | Starts timer (Outsystems)                                                 |
+| 7    | Handles failures with compensation (e.g., cancels order if payment fails) |
+
+<div className="flex justify-center my-8">
+  <Image
+    src="/images/projects/campusg-create-order-saga.png"
+    width="2000"
+    height="1234"
+    alt="CampusG Create Order Saga microservice interaction diagram"
+    className="rounded-lg shadow-md"
+  />
+</div>
+
+---
+
+#### 2. Accept Order Saga (Temporal)
+
+Manages the runner order acceptance workflow using Temporal activities to update the Order Service and Timer Service, with compensation logic for failures.
+
+| Step | Action                                                          |
+| ---- | --------------------------------------------------------------- |
+| 1    | Runner accepts order                                            |
+| 2    | Saga updates order status (assigns runner)                      |
+| 3    | Notifies Timer Service (Outsystems)                             |
+| 4    | Handles failures with compensation (e.g., reverts order status) |
+
+<div className="flex justify-center my-8">
+  <Image
+    src="/images/projects/campusg-accept-order-saga.png"
+    width="2000"
+    height="1234"
+    alt="CampusG Accept Order Saga microservice interaction diagram"
+    className="rounded-lg shadow-md"
+  />
+</div>
+
+<div className="flex justify-center my-8">
+  <Image
+    src="/images/projects/campusg-accept-order-saga-temporal.png"
+    width="2000"
+    height="1234"
+    alt="CampusG Accept Order Saga temporal workflow execution"
+    className="rounded-lg shadow-md"
+  />
+</div>
+
+---
+
+#### 3. Complete Order Saga (Temporal)
+
+Orchestrates order completion and payment flows, coordinating between Order, User, and Payment services, and managing fund release to runners via Stripe. Handles failure scenarios with compensation actions.
+
+| Step | Action                                                           |
+| ---- | ---------------------------------------------------------------- |
+| 1    | Runner marks order as completed                                  |
+| 2    | Saga updates order status                                        |
+| 3    | Retrieves runner payment info                                    |
+| 4    | Retrieves payment ID                                             |
+| 5    | Releases funds (Stripe payout)                                   |
+| 6    | Updates final order status                                       |
+| 7    | Handles failures with compensation (e.g., reverts payout/status) |
+
+<div className="flex justify-center my-8">
+  <Image
+    src="/images/projects/campusg-complete-order-saga.png"
+    width="2000"
+    height="1234"
+    alt="CampusG Complete Order Saga microservices interaction diagram & temporal workflow execution"
+    className="rounded-lg shadow-md"
+  />
+</div>
+
+---
+
+#### 4. Order Timeout Process
+
+Handles automatic order expiration and cancellation if not accepted within a set time frame.
+
+| Step | Action                                                                                       |
+| ---- | -------------------------------------------------------------------------------------------- |
+| 1    | Timer Service polls every 5 minutes to check if 30 minutes have passed since order creation. |
+| 2    | If expired, marks the order as expired.                                                      |
+| 3    | Create Order Saga polls every 1 minute for expired orders.                                   |
+| 4    | If found, initiates order cancellation via Kafka.                                            |
+| 5    | Order Service processes cancellation and confirms via Kafka event.                           |
+
+<div className="flex justify-center my-8">
+  <Image
+    src="/images/projects/campusg-create-order-timer.png"
+    width="2000"
+    height="1234"
+    alt="CampusG Create Order Saga timer execution diagram"
+    className="rounded-lg shadow-md"
+  />
+</div>
+
+## Why Saga?
+
+While planning the project, we discovered a post from AWS on the Saga Orchestration Pattern.
+
+<div className="flex justify-center my-8">
+  <Image
+    src="/images/projects/campusg-aws-diagram.png"
+    width="800"
+    height="450"
+    alt="AWS Saga Orchestration Step Functions Diagram"
+    className="rounded-lg shadow-md"
+  />
+</div>
+
+[Link to diagram from the AWS documentation](https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/saga-orchestration.html#saga-orchestration-implementation)
+
+In fact, this diagram that closely resembled the steps our services would need to go through, as it involved an ordering process where issues could occur across multiple services with various data states to manage.
+
+Additionally, as most of the team lacked Java experience, we sought Python-based tools to assist with this implementation. We initially used a Pub-Sub system with Kafka to implement one of our Sagas (orchestration via Saga but with choreography-style execution). Later, we discovered a orchestration tool called Temporal and implemented two additional Sagas with it, more closely resembling the AWS Step Functions diagram.
+
+We opted against AWS Step Functions as we were building our solution to run locally, and developing a fully cloud-hosted solution seemed daunting at that point.
+
+The Saga pattern helped us manage complex distributed transactions like order creation, acceptance, and completion/payment. Without it, we would have needed to account for numerous edge cases and engineer multiple flows to handle all types of errors.
+
+## Further Improvements
+
+To further enhance our project, several real-world development considerations could be incorporated. For example, introducing an API gateway for our APIs and microservices would provide a unified entry point, enabling advanced features such as rate limiting, API versioning, and secure, permission-based access control.
+
+Implementing an API gateway would have deepened our understanding of these core concepts. While we explored the fundamental capabilities of API gateways in class, integrating one into our project was considered Beyond-the-Lab (BTL) and thus not included in the initial scope.
+
+Additionally, deploying the application to the cloud would enable a live demonstration accessible to all users. This would require further expertise in cloud deployment of microservices, as well as integration with cloud-based message brokers and saga orchestrators.

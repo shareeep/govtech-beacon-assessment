@@ -1,0 +1,196 @@
+---
+title: The New Talk in Town - BreadTalk Digital Transformation
+shortTitle: "BreadTalk Digital Transformation"
+description: AI-driven digital transformation proposal featuring a YOLOv11s visual checkout model (Macro F1 0.88), AutoRec recommender system, and mobile-first Figma prototypes.
+image: /images/projects/breadtalk-cover.png
+date: "2025-04-03"
+authors:
+  - shariff-rashid
+tags:
+  [
+    "AI/ML",
+    "Frontend",
+    "Data Analysis",
+    "Computer Vision",
+    "YOLO",
+    "Figma",
+    "Python",
+    "Recommender Systems",
+  ]
+projectType: "AI/ML"
+highlights:
+  - YOLOv11s object detection model (Macro F1 0.88) trained on 324 hand-labelled images for visual checkout
+  - AutoRec neural collaborative filtering recommender for personalised product suggestions
+  - Mobile-first Figma prototypes for 3 integrated features (ordering, AI checkout, recommendations)
+---
+
+Project Grade Received: "A"
+
+- [Presentation Slides](https://www.canva.com/design/DAGinSUAU-Q/Z-197aR8z5Cye6VYQE0trQ/view?utm_content=DAGinSUAU-Q&utm_campaign=designshare&utm_medium=link2&utm_source=uniquelinks&utlId=hb504243b99)
+
+- [Figma Mobile App Prototype](https://www.figma.com/proto/9KtdyjjkYRWB5YnlpFHfdK/BreadTalk?node-id=96-1736&t=XDVcRtMavvEodFWS-1)
+
+- [BreadSee YOLOv11s Trained Model](https://huggingface.co/nightner/yolo11-bread-detector-v2/tree/main)
+
+## Summary
+
+Developed as part of the **DBTT (Digital Business - Technologies and Transformation/IS215)** module, this project explores a potential pathway for the digital transformation of BreadTalk, one of Singapore's leading bakery chains, through AI-driven solutions aimed at improving customer experience, streamlining operations, and enhancing business intelligence.
+
+The goal is to address operational inefficiencies and modernise customer experience at BreadTalk using **data-driven solutions**. We noted three potential avenues to explore:
+
+- Reducing checkout queue time
+- Offering personalised recommendations based on user data
+- Modernising BreadTalk's in-store and mobile experiences
+
+We proposed three solutions that work together to create a cohesive experience for customers, modernising the brand's experience and creating rich data collection for BreadTalk to engineer & derive further insights.
+
+1. BreadPickUp — Mobile Order for Pickup
+2. BreadSee — AI-Powered Mobile Checkout
+3. BreadThink — Personalised Recommendations
+
+---
+
+### 1. BreadPickUp — Mobile Order for Pickup
+
+<div className="flex justify-center my-8">
+  <Image
+    src="/images/projects/breadtalk-pickup-figma.png"
+    width="800"
+    height="450"
+    alt="Figma screens for pickup function"
+    className="rounded-lg shadow-md"
+  />
+</div>
+
+This feature allows users to pre-order their bread via the app and pick it up in-store.
+
+- Reduces wait time & ensures product availability
+- Provides a convenient and speedy solution for rushing Singaporeans
+
+Highly feasible, learning from competitors such as Luckin Coffee and Starbucks which have:
+
+- Strong sales promotions: Such elements incentivise app usage
+- Loyalty points system: Reducing friction at checkout and rewarding repeat purchases
+- In-app pre-ordering: Appealing to convenience
+
+<div className="flex justify-center my-8">
+  <Image
+    src="/images/projects/breadtalk-pickup-competitors.png"
+    width="800"
+    height="450"
+    alt="justification mobile ordering feature"
+    className="rounded-lg shadow-md"
+  />
+</div>
+
+---
+
+### 2. BreadSee — AI-Powered Mobile Checkout
+
+<div className="flex justify-center my-8">
+  <Image
+    src="/images/projects/breadtalk-breadsee-flow.png"
+    width="800"
+    height="450"
+    alt="User flow for breadsee function"
+    className="rounded-lg shadow-md"
+  />
+</div>
+
+We trained a computer vision system that identifies bread items on a tray for instant mobile payment.
+
+- YOLOv11s model trained on 6 bread classes
+- Eliminates manual checkout and minimises human error
+- Provides customer insights - enables data collection on purchasing habits
+
+The training process:
+
+- We labelled 324 images of BreadTalk bread that we purchased in various lighting (but consistently on a white tray of sorts). This was done manually in LabelStudio with our bread classes specified so that we can use it to train the YOLOv11s model.
+
+<div className="flex justify-center my-8">
+  <Image
+    src="/images/projects/breadtalk-breadsee-model-training.png"
+    width="800"
+    height="450"
+    alt="training and labelling for model training"
+    className="rounded-lg shadow-md"
+  />
+</div>
+
+Results:
+
+<div className="flex justify-center my-8">
+  <Image
+    src="/images/projects/breadtalk-breadsee-model-eval.png"
+    width="800"
+    height="450"
+    alt="training and labelling for model training"
+    className="rounded-lg shadow-md"
+  />
+</div>
+
+| Class                   | TP   | FP   | FN   | Precision (P) | Recall (R) | F1-Score |
+| ----------------------- | ---- | ---- | ---- | ------------: | ---------- | -------- |
+| Coffi-O                 | 0.95 | 0.05 | 0.05 |          0.95 | 0.95       | 0.95     |
+| Flosss                  | 1.00 | 0.00 | 0.00 |          1.00 | 1.00       | 1.00     |
+| Plain Croissant         | 0.78 | 0.22 | 0.40 |          0.78 | 0.66       | 0.71     |
+| Sausage Standard        | 0.89 | 0.11 | 0.20 |          0.89 | 0.77       | 0.83     |
+| Sugar Donut             | 0.83 | 0.17 | 0.05 |          0.94 | 0.88       | 0.91     |
+| Overall (Macro Average) | -    | -    | -    |      **0.91** | **0.85**   | **0.88** |
+
+We also had a working live demo during our presentation where we had a webcam plugged in to our laptop as a camera source, and it successfully identified the breads we placed on the tray.
+
+---
+
+### 3. BreadThink — Personalised Recommendations
+
+We also worked on a recommender system using the AutoRec Model to:
+
+- Offer data-driven promotions and suggestions
+- Improve customer loyalty
+- Increase average basket size
+
+Technical Process:
+
+<div className="flex justify-center my-8">
+  <Image
+    src="/images/projects/breadtalk-autorec.png"
+    width="800"
+    height="450"
+    alt="training and labelling for model training"
+    className="rounded-lg shadow-md"
+  />
+</div>
+
+Why AutoRec:
+
+- AutoRec is a neural collaborative filtering approach that uses auto-encoders to generate personalised recommendations
+- Autorec compresses the purchase history into a compact representation, then expands this to predict which new items that the user will enjoy.
+- It works efficiently with sparse data by focusing only on items user actually purchased.
+
+This is an example of the output derived from generated sample data of customers, passed through our trained model:
+| user_id | purchase_history | rec_1_bread_name | rec_1_confidence | rec_2_bread_name | rec_2_confidence | rec_3_bread_name | rec_3_confidence |
+|---------|-------------------------------------------|---------------------|------------------|------------------------|------------------|---------------------|------------------|
+| User_1 | Flosss(3); Shio Pan(1); Plain Croissa... | Shio Pan | 60.3 | Hearty Sausage Croissa | 65 | Get Cheesey | 67.8 |
+| User_2 | Flosss(3); Fire Flosss(2); Apple Worr... | Sugar Donut | 56.2 | Butter Sugar Loaf | 57.9 | Chocolate Croissant | 64.3 |
+| User_3 | Hearty Sausage Croissant(3); Sunflo... | Chicken Parmesan | 22.4 | Butter Sugar Loaf | 33.2 | Butter Sugar Loaf | 46.4 |
+| User_4 | Double Dog(1); Tuna(1); Chicken Par... | Get Cheesey | 27.6 | Cheese Sausage | 32.6 | Chocolate Croissant | 35.9 |
+| User_5 | Flosss(1); Plain Croissant(2); Double... | Get Cheesey | 33 | Fire Flosss | 38.8 | Sugar Donut | 43.6 |
+| User_6 | Double Dog(1); Sugar Donut(2); Chee... | Get Cheesey | 18 | Hearty Sausage Croissa | 30 | Ham & Cheese | 39.7 |
+
+## Disclaimer and Copyright Notice
+
+This project was created solely for academic purposes as part of coursework for the IS215 class at Singapore Management University. It represents a hypothetical proposal and conceptual exploration, not an actual implementation.
+
+**Important Legal Disclaimers:**
+
+- This project is not affiliated with, sponsored by, or endorsed by BreadTalk Group Limited.
+- All BreadTalk trademarks, logos, brand names, and other proprietary materials referenced belong exclusively to BreadTalk Group Limited.
+- No commercial relationship exists between the project creators and BreadTalk Group Limited.
+- This educational exercise does not imply any actual or planned digital transformation at BreadTalk.
+- No confidential or proprietary information was used in creating this project.
+- All images of BreadTalk products were purchased legitimately for educational purposes.
+
+The project content, including the AI models, prototype designs, and transformation strategies, are presented purely as academic work. Upon request from BreadTalk Group Limited, content referencing their brand will be promptly removed.
+
+© All rights to the original content and concepts.

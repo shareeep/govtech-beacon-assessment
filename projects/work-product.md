@@ -1,0 +1,21 @@
+Short Answer
+Paperwork is a prompt-governed procurement report production system: it turns uploaded source documents into structured, template-ready outputs for governance artifacts (AOR checks, PSIRC gate papers, TER/TERR reports) and procurement lookup (InSupply), rather than acting like a generic chat assistant.
+
+Report types are explicitly productized as workflow outputs across frontend/backend IDs: TER, TERR, PSIRC Gate 1/2/3, AOR checker/validator, AOR in paperwork-frontend/enum/ReportTypeEnum.ts and paperwork-backend/src/common/enum/ReportTypeEnum.ts.
+Prompt sets are first-class system assets combined during seeding (AOR, TER, TERR_FORM, TERR_STANDARD, PSIRC gates) in paperwork-backend/prisma/seeders/promptSeeder.ts and paperwork-backend/prisma/seeders/promptSeeder.ts.
+Runtime is deterministic extraction/transformation with token accounting (system prompt + composed context + completion API + prompt/completion token capture) in paperwork-ai-backend/src/features/report_generations/services/report_generation_service.py, paperwork-ai-backend/src/features/report_generations/services/report_generation_service.py, and paperwork-ai-backend/src/features/report_generations/services/report_generation_service.py.
+Backend persists per-prompt generation state, defaults, completion, and tokens for orchestration/reliability in paperwork-backend/src/features/reports/services/report-generation-prompt-results.service.ts and paperwork-backend/src/features/reports/services/report-generation-prompt-results.service.ts.
+Feature-level business/user value
+
+TER/TERR: prompts enforce strict schema-like outputs (JSON/HTML, no hallucination fallback, formatting rules, no-newline constraints), which is aimed at producing directly usable procurement report sections with less manual rework; see TER strict contracts in paperwork-backend/prisma/seeders/prompts/terPrompts.ts and TERR-form extraction constraints in paperwork-backend/prisma/seeders/prompts/terrFormPrompts.ts.
+PSIRC (Gate 1/2/3): prompts are gate-specific governance content generators (problem framing, costs, criticality, contacts, schedule dates), with strict output contracts to fit template placeholders in paperwork-backend/prisma/seeders/prompts/psircGate1Prompts.ts, paperwork-backend/prisma/seeders/prompts/psircGate2Prompts.ts, and paperwork-backend/prisma/seeders/prompts/psircGate3Prompts.ts.
+AOR validator/checker: evolved into recommendation-note style quality checks with section-specific guidance, indicating value in review quality and document readiness, in paperwork-backend/prisma/seeders/prompts/aorPrompts.ts, with LangGraph-based processing in paperwork-ai-backend/src/services/aor_checker_service.py.
+InSupply: not just keyword search; it uses hybrid semantic+keyword retrieval over Milvus and LLM reranking with anti-hallucination controls on master catalogue IDs in paperwork-ai-backend/src/services/hybrid_search_service.py and paperwork-ai-backend/src/services/hybrid_search_service.py, with hallucination detection/fallback behavior in paperwork-ai-backend/src/services/hybrid_search_service.py. UI explicitly requires human validation and classification acknowledgment in paperwork-frontend/components/features/insupply/InSupplySearch.tsx and paperwork-frontend/components/features/insupply/InSupplyMultiSearch.tsx.
+
+What “Paperwork” is across all repos
+Frontend: workflow UX for AOR/PSIRC/TER/TERR/InSupply journeys and guardrails in paperwork-frontend/e2e-tests/tests-overview.md.
+Backend: workflow orchestration, prompt lifecycle, workerized InSupply endpoints in paperwork-backend/src/features/insupply/controllers/insupply.controller.ts.
+AI-backend: LLM execution, AOR checker logic, hybrid retrieval/reranking.
+MCP: agent-facing automation contracts for report creation/upload flows and report-type semantics in paperwork-mcp/docs/happy-flows.md, paperwork-mcp/docs/system-prompt.md, and paperwork-mcp/src/tools/reports.ts.
+AI-engine: model-serving infrastructure (LiteLLM/vLLM/local models) in paperwork-ai-engine/README.md.
+Document-service: downstream document assembly/rendering stack (Aspose/.NET service) in paperwork-document-service/README.MD.
