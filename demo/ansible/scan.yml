@@ -1,0 +1,51 @@
+---
+# scan.yml — Install oscap + run CIS scan on target servers, fetch results back
+- name: CIS Compliance Scan
+  hosts: targets
+  gather_facts: true
+
+  vars:
+    results_dir: /tmp/oscap_results
+    local_results_dir: /app/results
+
+  tasks:
+    - name: Install OpenSCAP and SCAP Security Guide
+      ansible.builtin.dnf:
+        name:
+          - openscap-scanner
+          - scap-security-guide
+        state: present
+
+    - name: Create results directory
+      ansible.builtin.file:
+        path: "{{ results_dir }}"
+        state: directory
+        mode: "0700"
+
+    - name: Run OpenSCAP CIS scan
+      ansible.builtin.command:
+        cmd: >
+          oscap xccdf eval
+          --profile {{ cis_profile }}
+          --results {{ results_dir }}/results.xml
+          --report {{ results_dir }}/report.html
+          {{ scap_content }}
+      register: scan_result
+      # oscap returns exit code 2 when there are failures (expected)
+      failed_when: scan_result.rc not in [0, 2]
+
+    - name: Fetch results XML
+      ansible.builtin.fetch:
+        src: "{{ results_dir }}/results.xml"
+        dest: "{{ local_results_dir }}/{{ inventory_hostname }}/results.xml"
+        flat: true
+
+    - name: Fetch HTML report
+      ansible.builtin.fetch:
+        src: "{{ results_dir }}/report.html"
+        dest: "{{ local_results_dir }}/{{ inventory_hostname }}/report.html"
+        flat: true
+
+    - name: Print scan summary
+      ansible.builtin.debug:
+        msg: "Scan complete. Exit code: {{ scan_result.rc }} (0=pass, 2=some failures)"

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>CIS Compliance Triage</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f6f8fa; color: #24292f; padding: 2rem; }
+    h1 { margin-bottom: 0.5rem; }
+    .subtitle { color: #656d76; margin-bottom: 1.5rem; }
+    .summary { display: flex; gap: 1rem; margin-bottom: 2rem; }
+    .summary .badge { padding: 0.5rem 1rem; border-radius: 6px; font-weight: 600; font-size: 0.9rem; }
+    .badge.critical { background: #ffebe9; color: #82071e; border: 1px solid #ffcecb; }
+    .badge.high { background: #fff8c5; color: #6a5300; border: 1px solid #f5e047; }
+    .badge.medium { background: #ddf4ff; color: #0550ae; border: 1px solid #80ccff; }
+    .badge.low { background: #dafbe1; color: #116329; border: 1px solid #82e596; }
+    .card { background: #fff; border: 1px solid #d0d7de; border-radius: 8px; margin-bottom: 1rem; overflow: hidden; }
+    .card-header { padding: 0.75rem 1rem; display: flex; align-items: center; gap: 0.75rem; border-bottom: 1px solid #d0d7de; }
+    .card-header .severity { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 12px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; }
+    .card-header .title { font-weight: 600; }
+    .card-header .rule-id { color: #656d76; font-size: 0.85rem; margin-left: auto; font-family: monospace; }
+    .card-body { padding: 1rem; }
+    .card-body p { margin-bottom: 0.5rem; line-height: 1.5; }
+    .card-body .label { font-weight: 600; color: #656d76; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    .card-body pre { background: #f6f8fa; padding: 0.75rem; border-radius: 6px; font-size: 0.85rem; overflow-x: auto; margin-top: 0.25rem; margin-bottom: 0.75rem; border: 1px solid #d0d7de; }
+    .intentional { background: #fff8c5; padding: 0.5rem 0.75rem; border-radius: 6px; font-size: 0.85rem; margin-top: 0.5rem; }
+    .mr-actions { display: flex; gap: 0.5rem; margin-top: 1rem; }
+    .btn { padding: 0.4rem 1rem; border-radius: 6px; font-size: 0.85rem; font-weight: 600; cursor: pointer; border: 1px solid; }
+    .btn-approve { background: #2da44e; color: #fff; border-color: #1a7f37; }
+    .btn-dismiss { background: #fff; color: #656d76; border-color: #d0d7de; }
+    .empty { text-align: center; padding: 3rem; color: #656d76; }
+  </style>
+</head>
+<body>
+  <h1>CIS Compliance Triage</h1>
+  <p class="subtitle">{{ data.total_failures }} failed controls — AI-triaged and prioritised</p>
+
+  <div class="summary">
+    {% for level in ['critical', 'high', 'medium', 'low'] %}
+      {% if data.summary.get(level, 0) > 0 %}
+        <span class="badge {{ level }}">{{ data.summary[level] }} {{ level }}</span>
+      {% endif %}
+    {% endfor %}
+  </div>
+
+  {% if data.findings %}
+    {% for f in data.findings %}
+    <div class="card">
+      <div class="card-header">
+        <span class="severity badge {{ f.severity }}">{{ f.severity }}</span>
+        <span class="title">{{ f.short_name | replace('_', ' ') | title }}</span>
+        <span class="rule-id">{{ f.short_name }}</span>
+      </div>
+      <div class="card-body">
+        <p class="label">Explanation</p>
+        <p>{{ f.explanation }}</p>
+
+        {% if f.remediation %}
+        <p class="label" style="margin-top: 0.75rem;">Remediation</p>
+        <pre>{{ f.remediation }}</pre>
+        {% endif %}
+
+        {% if f.likely_intentional %}
+        <div class="intentional">⚠️ This may be an intentional deviation — verify with the infrastructure team before applying.</div>
+        {% endif %}
+
+        <div class="mr-actions">
+          <button class="btn btn-approve">✓ Create MR</button>
+          <button class="btn btn-dismiss">✗ Dismiss</button>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  {% else %}
+    <div class="empty">No triage results found. Run <code>python triage.py --results results.xml</code> first.</div>
+  {% endif %}
+</body>
+</html>

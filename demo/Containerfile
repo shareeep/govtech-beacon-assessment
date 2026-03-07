@@ -1,0 +1,66 @@
+FROM rockylinux:9
+
+# ── Install tools ──────────────────────────────────────────────
+RUN dnf install -y \
+    openssh-server \
+    openscap-scanner \
+    scap-security-guide \
+    && dnf clean all
+
+# ── SSH setup ──────────────────────────────────────────────────
+RUN ssh-keygen -A
+# Demo-only password — never do this in production
+RUN echo 'root:demo1234' | chpasswd
+
+# ── INTENTIONAL MISCONFIGURATIONS ──────────────────────────────
+# These will be caught by the CIS RHEL scan, giving us meaningful
+# failures that the AI triage layer can prioritise and explain.
+#
+# NOTE: CIS RHEL Benchmark only covers OS-level settings.
+# Application-level checks (e.g. MySQL root password, Grafana
+# default creds) have their own separate CIS Benchmarks and are
+# NOT covered by the RHEL profile.
+
+# ── SSH misconfigs (CIS 5.2.x) ────────────────────────────────
+# 1. Allow root login (CIS 5.2.10)
+RUN sed -i 's/^#PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
+# 2. Allow empty passwords (CIS 5.2.9)
+RUN sed -i 's/^#PermitEmptyPasswords.*/PermitEmptyPasswords yes/' /etc/ssh/sshd_config
+# 3. Weak MaxAuthTries (CIS 5.2.7)
+RUN sed -i 's/^#MaxAuthTries.*/MaxAuthTries 10/' /etc/ssh/sshd_config
+# 4. Disable SSH protocol strictness
+RUN echo "IgnoreRhosts no" >> /etc/ssh/sshd_config
+
+# ── File permission misconfigs (CIS 6.1.x) ────────────────────
+# 5. World-readable shadow files
+RUN chmod 0644 /etc/shadow && \
+    chmod 0644 /etc/gshadow
+# 6. World-writable directory
+RUN mkdir /opt/shared && chmod 0777 /opt/shared
+
+# ── Unnecessary services & packages (CIS 2.2.x) ──────────────
+# 7. Install telnet client (insecure remote access tool)
+# 8. Install MariaDB — triggers "unnecessary service" finding
+#    (the RHEL CIS scan flags this as an unneeded listening service,
+#     but does NOT check MariaDB's own security config — that's a
+#     separate CIS MySQL Benchmark)
+RUN dnf install -y telnet mariadb-server && dnf clean all
+
+# ── User/password misconfigs (CIS 6.2.x, 5.4.x) ──────────────
+# 9. User with empty password
+RUN useradd -M demouser && passwd -d demouser
+# 10. No password aging policy (CIS 5.4.1.x)
+RUN sed -i 's/^PASS_MAX_DAYS.*/PASS_MAX_DAYS 99999/' /etc/login.defs && \
+    sed -i 's/^PASS_MIN_DAYS.*/PASS_MIN_DAYS 0/' /etc/login.defs && \
+    sed -i 's/^PASS_MIN_LEN.*/PASS_MIN_LEN 5/' /etc/login.defs
+
+# ── Kernel/sysctl misconfigs (CIS 3.x) ────────────────────────
+# 11. Enable IP forwarding (should be disabled on non-routers)
+RUN echo "net.ipv4.ip_forward = 1" >> /etc/sysctl.d/99-insecure.conf
+# 12. Accept ICMP redirects (CIS 3.3.2)
+RUN echo "net.ipv4.conf.all.accept_redirects = 1" >> /etc/sysctl.d/99-insecure.conf
+# 13. Disable TCP SYN cookies (CIS 3.3.8)
+RUN echo "net.ipv4.tcp_syncookies = 0" >> /etc/sysctl.d/99-insecure.conf
+
+EXPOSE 22 3306
+CMD ["/usr/sbin/sshd", "-D"]

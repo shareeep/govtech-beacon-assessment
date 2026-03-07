@@ -97,7 +97,53 @@ Generally, we deploy **LLM-as-judge**, but there are other more traditional meth
 
 **Context**: Building a tool to automate CIS Benchmark hardening checks for RHEL servers, evaluating AI vs. programmatic approaches.
 
-**Overall approach**: Keep it simple. The tool works like **Dependabot, but for CIS Benchmarks on RHEL servers** — it scans, identifies non-compliance, and generates change requests (MRs/PRs) with remediation for engineers to review and approve before anything is applied.
+**Overall approach**: The tool works like **Dependabot, but for CIS Benchmarks on RHEL servers** — it scans, identifies non-compliance, and generates change requests (MRs/PRs) with remediation for engineers to review and approve before anything is applied.
+
+**Architecture:**
+
+```
+┌─ Zone 1: Server Access ──────────────────────────────────────┐
+│                                                               │
+│  Ansible (SSH, key-based) ──► Target Servers                 │
+│                                  └─ oscap scan (CIS profile) │
+│                                  └─ outputs: XML + HTML       │
+│                                                               │
+│  Results collected back to control node                       │
+│  (AI never touches servers — only reads scan output)          │
+└─────────────────────────────┬─────────────────────────────────┘
+                              │ structured XML
+                              ▼
+┌─ Zone 2: AI Triage (no server access) ───────────────────────┐
+│                                                               │
+│  Reads XML → prioritises by severity → drafts MR             │
+│  Flags likely intentional deviations                          │
+│                                                               │
+│  Grounded by architecture, not just prompting:                │
+│  1. Input bounded — AI only receives parsed XML from oscap    │
+│  2. Output validated — every rule AI mentions must exist      │
+│     in the scan results (hallucination caught automatically)  │
+│  3. Action gated — human reviews MR before any change         │
+└─────────────────────────────┬─────────────────────────────────┘
+                              ▼
+┌─ Output ─────────────────────────────────────────────────────┐
+│  MR-style change requests (per finding, with remediation)     │
+│  Dashboard (compliance %, trends, per-server drill-down)      │
+│  Alerts (Slack/PagerDuty on compliance drift)                 │
+│  DB for historical data + cross-server querying               │
+└───────────────────────────────────────────────────────────────┘
+```
+
+**Key design decisions:**
+
+1. **Deterministic scanner, AI interpreter.** `oscap` determines compliance (auditable, reproducible). AI explains, prioritises, and drafts remediations — but never determines pass/fail. Same principle as preferring APIs over scraping (Q4): use structured, reliable data as the source of truth, let AI interpret it.
+2. **AI grounded by architecture.** The AI can't access servers. Its input is bounded (XML only). Its output is validated (grounding check). Its actions are gated (human approval). Three layers of control — not just prompt engineering.
+3. **Same automation pattern as Q3** — script (`oscap`) + schedule (cron/Ansible) + report (dashboard/MR). Ansible orchestrates, Python glues.
+
+**Demo implementation** (in `demo/` directory) proves the pipeline end-to-end:
+- Deliberately misconfigured Rocky Linux 9 container (13 known CIS violations across SSH, file permissions, unnecessary services, user accounts, kernel settings)
+- Compose: target scans on startup → triage parses XML + AI prioritises → Flask app shows MR-style cards with severity, explanation, remediation, approve/dismiss
+- Eval (`eval.py`) scores AI accuracy against known ground truth + grounding check (did AI hallucinate rules not in the scan?)
+- Mock mode works without API key; real mode with any OpenAI-compatible endpoint
 
 ---
 
@@ -127,6 +173,7 @@ The output needs to be verified:
 - **Transport security**: If connecting remotely (SSH), key-based auth only — never store passwords in scripts.
 - **Output handling**: Reports contain sensitive configuration details. Store encrypted, restrict access to authorised personnel.
 - **No auto-remediation**: The tool *reports* non-compliance, it doesn't fix it. Remediation goes through change management — like a PR that needs approval before merge.
+- **Tool integrity**: The scanning scripts and SCAP profiles should be version-controlled, code-reviewed, and stored in a tamper-evident repository. If an attacker modifies the scanning tool or its profiles, a compromised server can appear compliant.
 
 [Source: OpenSCAP project docs, CIS Benchmark documentation, tested locally with Rocky Linux 9 container]
 
@@ -151,7 +198,7 @@ This is battle-tested, community-maintained, and produces auditor-ready reports.
 
 #### 3. How would you automate this?
 
-Three layers: **scan**, **orchestrate**, **report**.
+Three layers: **scan**, **orchestrate**, **report** (as shown in the architecture above).
 
 **Scan**: `oscap` runs against each server and outputs results (XML) + report (HTML) with remediation snippets.
 
@@ -159,7 +206,7 @@ Three layers: **scan**, **orchestrate**, **report**.
 
 **Report + Monitor**: Store results in a database (Elasticsearch/PostgreSQL) for trending. Visualise in **Grafana/Kibana** — per-server compliance percentages, most-failed controls, trends over time. Set up **alerts** (Slack, PagerDuty) when compliance drops — e.g., "prod-db-01 at 78% CIS compliance, down from 95%." This gives the team a live view of fleet security posture.
 
-**Remediate (the Dependabot analogy)**: This is where AI adds practical value. The `oscap` report already provides Ansible/shell remediation snippets for each failure — but these are generated for a generic RHEL install. In practice, they won't always work first try: custom paths, conflicting services, environment-specific dependencies. So:
+**Remediate (the Dependabot analogy)**: This is where AI adds practical value. As outlined in the architecture, the AI never reads raw server configs — it consumes the **structured XML output** from `oscap` only. The `oscap` report already provides Ansible/shell remediation snippets for each failure — but these are generated for a generic RHEL install. In practice, they won't always work first try: custom paths, conflicting services, environment-specific dependencies. So:
 
 1. For each actionable failure, **generate a change request** (MR/PR) containing the remediation snippet from `oscap`.
 2. AI triages findings — prioritises by severity, flags context-dependent issues (e.g., "this server runs a legacy app, disabling TLS 1.0 might break it").
@@ -182,6 +229,7 @@ Three layers: **scan**, **orchestrate**, **report**.
 | **Flexibility** | Rigid — only checks what it's programmed to. | Flexible — can interpret new controls and reason about novel configs. |
 | **Auditability** | Fully auditable. Clear logic path per check. | Opaque. Not inspectable or reproducible. Hard to get audit sign-off. |
 | **Cost** | Low. Open-source, runs on existing infra. | Higher. Per-token API costs or GPU infra for self-hosted. |
+| **Edge cases** | Fails silently on unexpected configs (e.g., an `Include` directive in `sshd_config` that changes behaviour). | Can reason about context and catch subtle issues a rule-based check would miss — but may also introduce false positives. |
 
 **Where each fits in the Dependabot-style pipeline:**
 
@@ -189,6 +237,7 @@ Three layers: **scan**, **orchestrate**, **report**.
 - **AI** adds value *after* the scan: triaging findings by risk, explaining *why* a control matters, drafting the remediation MR description, and flagging context-dependent edge cases.
 - **The hybrid approach is optimal**: `oscap` is the source of truth, AI makes the output actionable and human-readable. Similar to the pattern at my work — deterministic extraction for the compliance-critical layer, LLM generation for the human-facing layer.
 - **Never let an LLM be the sole source of truth** for a compliance determination.
+- **AI must be grounded and evaluated** (Q5 principles in action): the architecture constrains AI input (XML only), validates AI output (grounding check — every rule it mentions must exist in the scan), and gates AI actions (human approval). The demo's `eval.py` scores this against known ground truth.
 
 [Source: Experience building AI-powered systems at work with deterministic + LLM hybrid architecture]
 
@@ -225,15 +274,18 @@ Demo: adding a new server in under a minute, switching compliance profiles (CIS 
 
 #### 2. Considerations for scaling in the future
 
-Scaling from proof-of-concept to enterprise-wide centres on four pillars:
+The demo proves the pipeline works end-to-end but has clear limitations (no real server access, no scheduling, ephemeral storage, unvalidated AI beyond known test cases). Scaling to production:
 
-**1. Infrastructure orchestration**: Ansible's push model works up to a few hundred hosts. Beyond that, scale with **Ansible Tower/AWX** (smart inventories, role-based scheduling) or **Red Hat Satellite** which natively integrates OpenSCAP. For cloud-native environments, use cloud APIs (AWS SSM, Azure Arc) to scan without direct SSH. Ansible's `forks` enable parallel execution; for very large fleets, a distributed agent model (each server scans locally, reports to central collector) is more efficient.
+| Area | Problem | Solution | Scale path |
+|---|---|---|---|
+| **Server access** | Demo scans locally, no SSH | Ansible fans out via SSH, one inventory line per server | Ansible → Tower/AWX → Red Hat Satellite (native OpenSCAP) |
+| **Scheduling** | Manual/one-shot | Cron or Tower scheduler for recurring scans | Drift detection: compare current vs. last state, alert on changes |
+| **Data** | Results in ephemeral volume | PostgreSQL/Elasticsearch with retention policies | Feeds into SIEM/GRC, enables queries like "all servers failing control 5.2.5 in last 30 days" |
+| **AI reliability** | Mock triage or single LLM call | Ground-truth test sets, grounding checks, severity scoring | Monitor LLM quality drift over time; eval pipeline runs on every model update |
+| **Access control** | Single user | RBAC: DB team sees their servers, networking sees theirs, leadership sees aggregate | Tower/AWX provides this natively |
+| **OS diversity** | Rocky 9 only | Multiple CIS profiles + OS-specific SCAP content per target | CIS K8s Benchmark for containers; cloud APIs (SSM, Arc) for cloud-native |
 
-**2. Continuous compliance and drift detection**: Servers drift from baseline as changes are made. The tool should run on schedule, compare current state against last known state, and alert on *changes* — not just failures. This transforms it from point-in-time auditor to continuous compliance monitor. Also needs a formal **exception/waiver workflow** for legitimate deviations — documenting what, why, who approved, and when it expires.
+The scaling path is incremental: **cron + Ansible → Tower/AWX → Satellite**, each step adding scheduling, RBAC, and credential management. The AI/eval layer scales independently — same grounding checks, just more data to validate against.
 
-**3. Data management and ecosystem integration**: At scale, each scan generates substantial data. Need structured storage (database, not flat files), retention policies, and efficient querying (e.g., "all servers that failed control 5.2.5 in the last 30 days"). Compliance data should feed into existing SIEM, GRC platforms, and ticketing systems so findings become trackable work items. Role-based access ensures each team sees their servers while leadership gets aggregate views.
-
-**4. Heterogeneous environments**: Enterprises run diverse OS (RHEL 7/8/9, Ubuntu, Windows Server) across bare metal, VMs, containers, and Kubernetes. Must support multiple CIS profiles and OS-specific differences. Container/Kubernetes hardening (CIS Kubernetes Benchmark) may require separate tooling.
-
-[Source: Ansible docs, Red Hat Satellite docs, general infrastructure scaling patterns]
+[Source: Ansible docs, Red Hat Satellite docs, general infrastructure scaling patterns, demo implementation experience]
 

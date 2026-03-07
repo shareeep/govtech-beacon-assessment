@@ -1,0 +1,22 @@
+# Environment
+.env
+demo/.env
+
+# Scan results (generated at runtime)
+demo/results/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+*.swp
+*.swo

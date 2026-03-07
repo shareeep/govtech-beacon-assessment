@@ -1,0 +1,32 @@
+# CIS Compliance Triage — Demo
+#
+# This replicates the real architecture:
+# app (control node) ──SSH──► target (RHEL server)
+#   Ansible runs oscap remotely, fetches results back, AI triages, web UI serves.
+#
+# Run:  podman-compose up --build
+# Open: http://localhost:5001
+#
+# To use real AI triage instead of mock:
+#   OPENAI_API_KEY=sk-... podman-compose up --build
+
+services:
+  # The deliberately misconfigured "server" — just runs SSH, nothing else
+  target:
+    build:
+      context: .
+      dockerfile: Containerfile
+    # SSH daemon listens on port 22 (container internal)
+    # The app container connects via compose networking (hostname: target)
+
+  # Control node — Ansible SSHs into target, runs scan, triages, serves UI
+  app:
+    build:
+      context: .
+      dockerfile: Containerfile.app
+    ports:
+      - "5001:5001"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    depends_on:
+      - target
