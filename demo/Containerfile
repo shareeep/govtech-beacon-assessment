@@ -56,11 +56,12 @@ RUN sed -i 's/^PASS_MAX_DAYS.*/PASS_MAX_DAYS 99999/' /etc/login.defs && \
 
 # ── Kernel/sysctl misconfigs (CIS 3.x) ────────────────────────
 # 11. Enable IP forwarding (should be disabled on non-routers)
-RUN echo "net.ipv4.ip_forward = 1" >> /etc/sysctl.d/99-insecure.conf
 # 12. Accept ICMP redirects (CIS 3.3.2)
-RUN echo "net.ipv4.conf.all.accept_redirects = 1" >> /etc/sysctl.d/99-insecure.conf
 # 13. Disable TCP SYN cookies (CIS 3.3.8)
-RUN echo "net.ipv4.tcp_syncookies = 0" >> /etc/sysctl.d/99-insecure.conf
+RUN mkdir -p /etc/sysctl.d && \
+    echo "net.ipv4.ip_forward = 1" >> /etc/sysctl.d/99-insecure.conf && \
+    echo "net.ipv4.conf.all.accept_redirects = 1" >> /etc/sysctl.d/99-insecure.conf && \
+    echo "net.ipv4.tcp_syncookies = 0" >> /etc/sysctl.d/99-insecure.conf
 
 EXPOSE 22 3306
 CMD ["/usr/sbin/sshd", "-D"]

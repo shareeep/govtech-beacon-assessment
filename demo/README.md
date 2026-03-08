@@ -45,15 +45,23 @@ Zone 2 (AI, no access):  triage.py only reads the XML output
 
 ```bash
 cd demo
-podman-compose up --build
+podman compose up --build
 ```
 
-That's it. The pipeline runs automatically:
+The pipeline runs automatically:
 1. Builds the target container (Rocky 9 + 13 intentional CIS misconfigs + SSH)
 2. Builds the app container (Python + Ansible + Flask)
 3. App waits for target SSH → runs Ansible scan → triages → starts web UI
 
 Open **http://localhost:5001** to see MR-style findings.
+
+### Trigger a rescan
+
+Hit **http://localhost:5001/rescan** to re-run the full scan+triage pipeline.
+The UI refreshes automatically with updated results.
+
+This simulates what would be a **daily cron job** or **Ansible Tower scheduled job**
+in production — compliance scans are periodic (daily/weekly), not continuous.
 
 ### With real AI triage
 
