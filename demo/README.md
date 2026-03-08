@@ -6,34 +6,6 @@ One command: `podman compose up --build` → open http://localhost:5001
 
 ---
 
-## What it does
-
-![Dashboard header — severity badges, timing, system selector](../images/header.png)
-
-The pipeline:
-1. **Scan** — Ansible SSHs into target, installs OpenSCAP, runs CIS Level 1 scan, fetches results
-2. **AI Triage** — Parses XML, sends failed controls to gpt-4o. Returns re-prioritised severity, remediation commands, verification steps, rollback instructions, attack chains
-3. **Grounding** — 6 programmatic checks validate AI output against scan data (no LLM-as-judge)
-4. **Web UI** — MR-style cards sorted by severity, with expandable detail panels
-
-### Attack Chains
-
-![Attack chain — compound threat grouping multiple findings](../images/attack-chain.png)
-
-The AI identifies findings that combine into compound threats — individual "medium" findings that together become critical. Each chain links to the relevant finding cards.
-
-### Finding Cards
-
-![Sample finding card — severity, remediation, details](../images/sample-entry-1.png)
-
-Each card shows: AI-assessed severity (with ⬆ Upgraded tag if higher than OpenSCAP's rating), plain-English explanation, and remediation command.
-
-![Expanded detail panel — verification, rollback, change window](../images/sample-entry-2.png)
-
-Expand "Details" for: fix complexity, change window (live vs restart), automation readiness, verification command, rollback steps, related findings, and OpenSCAP vs AI severity comparison.
-
----
-
 ## Architecture
 
 ```
