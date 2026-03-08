@@ -1,16 +1,38 @@
 # CIS Compliance Triage — Demo
 
-A minimal working demo of the "Dependabot for CIS Benchmarks" pipeline.
-Two containers, one command — replicates the real architecture:
+**Dependabot for CIS Benchmarks.** Scans a RHEL server against CIS security guidelines, AI triages the findings, and presents them as actionable cards for engineers to review.
 
-```
-app (control node) ──SSH (Ansible)──► target (misconfigured RHEL server)
-```
+One command: `podman compose up --build` → open http://localhost:5001
 
-1. **Scan** — Ansible SSHs into target, runs OpenSCAP CIS scan, fetches results
-2. **Triage** — AI (or mock heuristics) prioritises findings by severity
-3. **Review** — Web UI shows MR-style cards with approve/dismiss
-4. **Eval** — Ground truth check scores the AI's accuracy
+---
+
+## What it does
+
+![Dashboard header — severity badges, timing, system selector](../images/header.png)
+
+The pipeline:
+1. **Scan** — Ansible SSHs into target, installs OpenSCAP, runs CIS Level 1 scan, fetches results
+2. **AI Triage** — Parses XML, sends failed controls to gpt-4o. Returns re-prioritised severity, remediation commands, verification steps, rollback instructions, attack chains
+3. **Grounding** — 6 programmatic checks validate AI output against scan data (no LLM-as-judge)
+4. **Web UI** — MR-style cards sorted by severity, with expandable detail panels
+
+### Attack Chains
+
+![Attack chain — compound threat grouping multiple findings](../images/attack-chain.png)
+
+The AI identifies findings that combine into compound threats — individual "medium" findings that together become critical. Each chain links to the relevant finding cards.
+
+### Finding Cards
+
+![Sample finding card — severity, remediation, details](../images/sample-entry-1.png)
+
+Each card shows: AI-assessed severity (with ⬆ Upgraded tag if higher than OpenSCAP's rating), plain-English explanation, and remediation command.
+
+![Expanded detail panel — verification, rollback, change window](../images/sample-entry-2.png)
+
+Expand "Details" for: fix complexity, change window (live vs restart), automation readiness, verification command, rollback steps, related findings, and OpenSCAP vs AI severity comparison.
+
+---
 
 ## Architecture
 
@@ -31,9 +53,13 @@ app (control node) ──SSH (Ansible)──► target (misconfigured RHEL serve
 │  └──────────────┘  └──────────────┘  └──────────────┘       │
 └──────────────────────────────────────────────────────────────┘
 
-Zone 1 (server access):  Ansible + oscap on the target container
+Zone 1 (server access):  Ansible + oscap on the target
 Zone 2 (AI, no access):  triage.py only reads the XML output
 ```
+
+**Key constraint**: The AI never touches servers. It only reads structured XML from the scanner. All server access is through Ansible/SSH (Zone 1).
+
+---
 
 ## Quickstart
 
@@ -41,60 +67,38 @@ Zone 2 (AI, no access):  triage.py only reads the XML output
 - Podman + podman-compose (or Docker + docker-compose)
 - Optional: OpenAI API key for real AI triage
 
-### One command
+### Run
 
 ```bash
 cd demo
 podman compose up --build
 ```
 
-The pipeline runs automatically:
-1. Builds the target container (Rocky 9 + 13 intentional CIS misconfigs + SSH)
-2. Builds the app container (Python + Ansible + Flask)
-3. App waits for target SSH → runs Ansible scan → triages → starts web UI
-
-Open **http://localhost:5001** to see MR-style findings.
-
-### Trigger a rescan
-
-Hit **http://localhost:5001/rescan** to re-run the full scan+triage pipeline.
-The UI refreshes automatically with updated results.
-
-This simulates what would be a **daily cron job** or **Ansible Tower scheduled job**
-in production — compliance scans are periodic (daily/weekly), not continuous.
+Pipeline runs automatically: build containers → wait for SSH → Ansible scan → AI triage → web UI on port 5001.
 
 ### With real AI triage
 
 ```bash
-# Copy the example and add your key
 cp .env.example .env
 echo "OPENAI_API_KEY=sk-..." > .env
-
-podman-compose up --build
+podman compose up --build
 ```
 
-Without a key, it falls back to mock mode (keyword heuristics).
+Without a key, falls back to mock mode (keyword heuristics).
 
-### Evaluate the AI
+### Rescan
 
-After the pipeline runs, exec into the app container:
+Hit http://localhost:5001/rescan to re-run the scan+triage pipeline.
+
+### Evaluate
 
 ```bash
-podman-compose exec app python eval.py --triage /app/results/triage_results.json
+podman compose exec app python eval.py --triage /app/results/triage_results.json
 ```
 
-Scores: detection rate, severity accuracy, grounding (hallucination check).
+Scores detection rate, severity accuracy, and grounding (hallucination check).
 
-## What's in the target container?
-
-13 intentional misconfigurations across:
-- **SSH** (CIS 5.2.x) — root login, empty passwords, weak MaxAuthTries
-- **File permissions** (CIS 6.1.x) — world-readable shadow, world-writable dir
-- **Packages** (CIS 2.2.x) — telnet, mariadb-server installed
-- **User accounts** (CIS 5.4.x) — empty password user, no password aging
-- **Kernel** (CIS 3.2.x) — IP forwarding, ICMP redirects, SYN cookies disabled
-
-See [Containerfile](Containerfile) comments for each one mapped to its CIS control ID.
+---
 
 ## Files
 
@@ -103,21 +107,13 @@ See [Containerfile](Containerfile) comments for each one mapped to its CIS contr
 | `compose.yaml` | Orchestrates both containers via SSH |
 | `Containerfile` | Rocky 9 target — 13 intentional CIS misconfigs + SSH |
 | `Containerfile.app` | App container — Python + Ansible + Flask |
-| `start.sh` | Pipeline entrypoint: wait for SSH → scan → triage → serve |
-| `ansible/inventory.ini` | Target server list (add one line per server) |
+| `start.sh` | Pipeline: wait SSH → scan → triage → serve |
+| `ansible/inventory.ini` | Target list (one line per server) |
 | `ansible/scan.yml` | Playbook: install oscap, scan, fetch results |
-| `triage.py` | Parse oscap XML → AI triage → structured JSON |
-| `app.py` | Flask web UI — MR-style finding cards |
-| `templates/index.html` | Card UI with severity badges + remediation |
+| `triage.py` | Parse XML → AI triage → JSON (with grounding checks) |
+| `app.py` | Flask web UI |
 | `eval.py` | Score AI accuracy against ground truth |
-| `.env.example` | Environment variable template |
 
-## Notes for the assessment
+## Target misconfigurations
 
-- **CIS RHEL Benchmark only covers OS-level settings.** MariaDB is installed to
-  trigger "unnecessary service" findings, but its *own* security config (root
-  password etc) is checked by a separate CIS MySQL Benchmark.
-- **The AI never touches production.** It only reads scan output (Zone 2). All
-  server access is through Ansible/SSH with least privilege (Zone 1).
-- **No auto-remediation.** The tool proposes MRs, humans approve. Same workflow
-  as code review.
+13 intentional CIS violations across SSH (root login, empty passwords), file permissions (world-readable shadow), packages (telnet, mariadb-server), user accounts (empty password, no aging), and kernel params (IP forwarding, SYN cookies disabled). See [Containerfile](Containerfile) for each one mapped to its CIS control ID.

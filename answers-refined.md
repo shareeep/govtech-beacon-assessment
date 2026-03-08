@@ -278,14 +278,28 @@ Structure around three questions:
 "This tool automatically checks whether our servers are configured securely, based on industry-standard security guidelines (CIS Benchmarks). Think of it as an automated safety inspection for IT infrastructure — like a building inspector checking fire exits and electrical wiring."
 
 **"How accurate is it?"**
-Show a concrete comparison: run the tool on a sample server, have a senior engineer manually verify 10–15 controls, present results side-by-side. The tool produces identical results to manual review, but in seconds instead of hours. Use a dashboard showing green/amber/red status per server with a clear compliance percentage (e.g., “94% compliant across 50 servers”). Let stakeholders drill down per server.
+Two layers of accuracy — the scanner and the AI — each validated differently.
 
-The demo's UI shows this in practice: findings sorted by severity as MR-style cards, with findings **tagged ⬆ Upgraded when the AI rates them higher** than the scanner alone — making it immediately visible where human attention is most needed. **Attack chains** surface compound threats (e.g., “4 file permission issues together expose password hashes”) that no single-finding report would highlight.
+*Scanner accuracy*: The compliance scan itself is **deterministic** — OpenSCAP evaluates each CIS control with the same logic every time. Run on a sample server, have a senior engineer verify 10–15 controls manually, present results side-by-side. Identical results, seconds instead of hours.
 
-If the tool includes an LLM component, be transparent: "The AI helps explain findings in plain English and suggests fixes, but every compliance determination is made by deterministic checks, not AI guesswork. The AI is the interpreter, not the inspector."
+*AI accuracy*: The AI layer (triage, prioritisation, remediation advice) is **grounded by architecture, not just prompting**. The demo runs 6 programmatic checks on every AI response — no "LLM-as-judge" needed:
+- Every rule the AI mentions must exist in the actual scan results (catches hallucinated findings)
+- Severity values must be valid; extreme jumps are flagged for human review
+- Cross-references (related findings, attack chains) must resolve to real scan data
+- Required fields must be present on every finding
+
+The demo uses **gpt-4o as the baseline model**. For production, we'd evaluate models specifically strong in security/code reasoning tasks (e.g., Claude, Gemini) against a ground-truth test set using the same grounding checks + human review. The `eval.py` framework is already built for this — swap the model, run the same eval, compare scores.
+
+Be transparent with stakeholders: "Every compliance determination is made by deterministic checks, not AI. The AI explains findings and suggests fixes, but it's the interpreter, not the inspector. And we validate its output programmatically."
 
 **"How flexible is it?"**
-Demo: adding a new server in under a minute, switching compliance profiles (CIS Level 1 vs. Level 2), generating filtered reports. Same tool works across RHEL versions and can extend to other OSes.
+Flexibility in three dimensions:
+
+*1. Scan profiles are swappable, not hardcoded.* The demo runs CIS Level 1 for RHEL/Rocky — but switching to Level 2, or a completely different profile (DISA STIG, PCI-DSS, HIPAA) is a one-line config change. SCAP Security Guide ships all of these. The architecture doesn't change — only the profile ID passed to `oscap`.
+
+*2. Low friction for engineering teams.* What do server teams need to give us? **SSH access** (key-based) and a line in the Ansible inventory. That's it. No agent to install, no service to maintain on their side. The tool installs its own scanner (`oscap`), runs the scan, and cleans up. Engineers receive findings as clear MR-style cards — not raw XML — and only need to review and approve fixes relevant to their systems.
+
+*3. New servers in under a minute.* Demo: add one line to `inventory.ini`, re-run. In production with Tower/AWX, new servers can be auto-discovered from cloud inventories.
 
 **Avoid**: technical jargon, individual control deep-dives, live terminal demos with raw CLI output.
 
@@ -308,5 +322,22 @@ The demo proves the pipeline works end-to-end with real SSH-based scanning and A
 
 The scaling path is incremental: **cron + Ansible → Tower/AWX → Satellite**, each step adding scheduling, RBAC, and credential management. The AI/eval layer scales independently — same grounding checks, just more data to validate against.
 
-[Source: Ansible docs, Red Hat Satellite docs, general infrastructure scaling patterns, demo implementation experience]
+**AI processing at scale — parallelism and bottlenecks:**
+
+The scanning layer parallelises naturally — Ansible runs oscap on many hosts concurrently (controlled by `forks`). But the AI triage layer is a potential bottleneck: the demo processes one server's findings per API call (~11s for 8 findings with gpt-4o, or ~1.4s/finding). At 100 servers × 8 findings each, that's sequential total of ~18 minutes.
+
+Mitigation: **triage calls are embarrassingly parallel** — each server's findings are independent, so we can fan out concurrent API calls (one per server). With a thread/process pool, 100 servers can be triaged in roughly the same time as one, limited only by API rate limits (gpt-4o: ~10K RPM on standard tier). A queue-based architecture (e.g., Celery + Redis) handles this cleanly.
+
+**Security concern — sending scan data to external APIs:**
+
+Scan results contain sensitive configuration details (SSH settings, file permissions, installed packages, user accounts). Sending this to an external LLM API (OpenAI, Anthropic) may violate data sovereignty or classification policies — especially in government environments.
+
+Options:
+1. **Self-hosted model** (e.g., Llama 3, Mistral via vLLM/Ollama) — data never leaves the network. Trade-off: requires GPU infrastructure, may be less capable than frontier models on security reasoning tasks. The demo's `--base-url` flag already supports this — point to any OpenAI-compatible endpoint.
+2. **Government-approved cloud** — Azure OpenAI in a sovereign region, or a GovCloud endpoint with appropriate data classification.
+3. **Redaction** — strip hostnames, IPs, and environment-specific details before sending to the API. The AI only needs rule IDs and titles to triage; actual config values can be withheld.
+
+The `eval.py` framework supports comparing model quality across providers, so the team can quantify exactly what capability they'd trade for data sovereignty.
+
+[Source: Ansible docs, Red Hat Satellite docs, OpenAI rate limits docs, general infrastructure scaling patterns, demo implementation experience]
 
