@@ -105,28 +105,37 @@ Generally, we deploy **LLM-as-judge**, but there are other more traditional meth
 ┌─ Zone 1: Server Access ──────────────────────────────────────┐
 │                                                               │
 │  Ansible (SSH, key-based) ──► Target Servers                 │
-│                                  └─ oscap scan (CIS profile) │
+│                                  └─ installs oscap if needed  │
+│                                  └─ runs CIS L1 scan          │
 │                                  └─ outputs: XML + HTML       │
 │                                                               │
-│  Results collected back to control node                       │
+│  Results fetched back to control node via Ansible             │
 │  (AI never touches servers — only reads scan output)          │
 └─────────────────────────────┬─────────────────────────────────┘
                               │ structured XML
                               ▼
 ┌─ Zone 2: AI Triage (no server access) ───────────────────────┐
 │                                                               │
-│  Reads XML → prioritises by severity → drafts MR             │
-│  Flags likely intentional deviations                          │
+│  Parses XML → sends failed controls to LLM → returns:        │
+│  • Re-prioritised severity (may upgrade from oscap rating)    │
+│  • Plain-English explanation + remediation command            │
+│  • Verification command (confirm fix without full rescan)     │
+│  • Rollback instruction (undo if fix causes issues)           │
+│  • Fix complexity, change window, automation readiness        │
+│  • Related findings ("fix these together — same config")      │
+│  • Attack chains (compound risk across multiple findings)     │
+│  • Intentional deviation flag                                 │
 │                                                               │
 │  Grounded by architecture, not just prompting:                │
 │  1. Input bounded — AI only receives parsed XML from oscap    │
-│  2. Output validated — every rule AI mentions must exist      │
+│  2. Output validated — every rule AI mentions must exist       │
 │     in the scan results (hallucination caught automatically)  │
 │  3. Action gated — human reviews MR before any change         │
 └─────────────────────────────┬─────────────────────────────────┘
                               ▼
 ┌─ Output ─────────────────────────────────────────────────────┐
-│  MR-style change requests (per finding, with remediation)     │
+│  MR-style cards (per finding: severity, remediation, details) │
+│  Attack chain view (compound threats across findings)          │
 │  Dashboard (compliance %, trends, per-server drill-down)      │
 │  Alerts (Slack/PagerDuty on compliance drift)                 │
 │  DB for historical data + cross-server querying               │
@@ -139,27 +148,34 @@ Generally, we deploy **LLM-as-judge**, but there are other more traditional meth
 2. **AI grounded by architecture.** The AI can't access servers. Its input is bounded (XML only). Its output is validated (grounding check). Its actions are gated (human approval). Three layers of control — not just prompt engineering.
 3. **Same automation pattern as Q3** — script (`oscap`) + schedule (cron/Ansible) + report (dashboard/MR). Ansible orchestrates, Python glues.
 
-**Demo implementation** (in `demo/` directory) proves the pipeline end-to-end:
-- Deliberately misconfigured Rocky Linux 9 container (13 known CIS violations across SSH, file permissions, unnecessary services, user accounts, kernel settings)
-- Compose: target scans on startup → triage parses XML + AI prioritises → Flask app shows MR-style cards with severity, explanation, remediation, approve/dismiss
-- Eval (`eval.py`) scores AI accuracy against known ground truth + grounding check (did AI hallucinate rules not in the scan?)
-- Mock mode works without API key; real mode with any OpenAI-compatible endpoint
+**Demo implementation** (in `demo/` directory) proves the pipeline end-to-end with real SSH-based architecture:
+
+- **Target container**: Rocky Linux 9 with SSH daemon + 13 intentional CIS violations (SSH misconfigs, weak file permissions on shadow/gshadow, unnecessary packages like telnet, users with empty passwords, insecure kernel parameters)
+- **App container**: Python 3.11 + Ansible + Flask. Ansible SSHs into target, installs oscap, runs CIS L1 Server scan, fetches XML + HTML results back.
+- **AI triage** (real gpt-4o): Parses XML, sends failed controls to LLM. Returns: re-prioritised severity, plain-English explanation, remediation command, verification command (confirm fix without full rescan), rollback instruction, fix complexity, change window guidance, automation readiness, related findings ("fix together"), and attack chain analysis (compound threats).
+- **Grounding check**: Every rule the AI returns is validated against parsed scan results — hallucinated rules are caught automatically.
+- **Web UI** (Flask on port 5001): MR-style cards sorted by severity. Shows attack chains at the top ("these 4 findings combine into unauthenticated access to password hashes"). Findings tagged ⬆ Upgraded when AI rates higher than OpenSCAP. Expandable detail panel per finding. Original OpenSCAP HTML report accessible via /report.
+- **Real results**: 8 failed controls, 5 upgraded by AI from medium to critical/high based on real-world impact. 1 attack chain identified grouping 4 shadow/gshadow file permission findings.
+- Mock mode works without API key; real mode with any OpenAI-compatible endpoint.
+- Single command to run: `podman compose up --build`
 
 ---
 
 #### 1. How would your tool check server settings? Any security considerations?
 
-I would use **OpenSCAP** (`oscap`) as the scanning engine. It handles querying system configuration files, checking running state, and evaluating kernel parameters against a defined security profile — no need to write custom parsers.
+I would use **OpenSCAP** (`oscap`) as the scanning engine — it's the standard tooling for evaluating SCAP content against system configuration. It handles querying configuration files, checking running state, and evaluating kernel parameters against a defined security profile. No need to write custom parsers.
 
 ```bash
 oscap xccdf eval \
-  --profile xccdf_org.ssgproject.content_profile_cis \
+  --profile xccdf_org.ssgproject.content_profile_cis_server_l1 \
   --results results.xml \
   --report report.html \
   /usr/share/xml/scap/ssg/content/ssg-rhel9-ds.xml
 ```
 
 This produces an HTML report with pass/fail for each CIS control, plus remediation snippets (Ansible/shell) for each failure.
+
+For remote scanning, **OpenSCAP provides `oscap-ssh`** — a built-in utility that SSHs into a target, copies SCAP content, runs the evaluation, and downloads results. I use **Ansible** instead because it scales to fleet management (one inventory line per server), handles idempotent installation, and integrates with orchestration tools like Ansible Tower — but the underlying SSH-based approach is the same one OpenSCAP's own docs endorse.
 
 The output needs to be verified:
 
@@ -181,18 +197,20 @@ The output needs to be verified:
 
 #### 2. How would your tool verify compliance with CIS Benchmarks?
 
-Use **OpenSCAP with SCAP Security Guide**. Red Hat ships `scap-security-guide` with pre-built CIS profiles (Level 1, Level 2) that translate the CIS PDF recommendations into machine-readable SCAP rules. The profiles are automatically available after install — no separate download.
+Use **OpenSCAP with SCAP Security Guide**. Red Hat ships `scap-security-guide` with pre-built CIS profiles (Level 1 Server, Level 1 Workstation, Level 2 Server, Level 2 Workstation) that translate the CIS PDF recommendations into machine-readable SCAP rules. The profiles are automatically available after install — no separate download.
 
 **How it works:**
 
 1. Install `openscap-scanner` + `scap-security-guide` on the target.
-2. Select the appropriate CIS profile — the package bundles profiles matched to the OS version (e.g., `ssg-rhel9-ds.xml` for RHEL 9). Choose L1 (essential baseline, most production servers) or L2 (stricter, for high-security/regulated environments).
+2. Select the appropriate CIS profile — the package bundles profiles matched to the OS version (e.g., `ssg-rl9-ds.xml` for Rocky Linux 9 / RHEL 9). The demo uses `xccdf_org.ssgproject.content_profile_cis_server_l1` (CIS Level 1 - Server), which covers essential baseline controls suitable for most production servers.
 3. `oscap` evaluates each CIS control against actual system state — checking config files, service states, file permissions, kernel parameters, etc.
 4. Outputs: machine-readable XML (for automation) + human-readable HTML report with pass/fail per CIS control ID + remediation snippets (Ansible/shell).
 
+A key finding from building the demo: L1 and L2 profiles in the SCAP Security Guide for Rocky Linux 9 evaluate the **same set of 1,523 rules** — the difference is in profile selection and scoring thresholds, not separate rule sets. This means the scanner reports on the same controls regardless of profile; the profile determines which are *required* to pass.
+
 This is battle-tested, community-maintained, and produces auditor-ready reports. The alternative — writing custom checks mapped to each CIS control — is possible but means manually maintaining the mapping every time CIS releases a new version. SCAP Security Guide handles that for you.
 
-[Source: Red Hat SCAP Security Guide docs, OpenSCAP project docs, CIS Benchmarks FAQ, tested locally with Rocky Linux 9 container]
+[Source: Red Hat SCAP Security Guide docs, OpenSCAP project docs, CIS Benchmarks FAQ, tested locally with Rocky Linux 9 container — verified 1,523 rules evaluated across both L1 and L2 profiles]
 
 ---
 
@@ -202,20 +220,21 @@ Three layers: **scan**, **orchestrate**, **report** (as shown in the architectur
 
 **Scan**: `oscap` runs against each server and outputs results (XML) + report (HTML) with remediation snippets.
 
-**Orchestrate**: Use **Ansible** to run the scan across all RHEL hosts — it's agentless (SSH), aligns with the Red Hat ecosystem, scales easily. A playbook deploys the scanner to all hosts in inventory, executes in parallel, and collects results centrally. Schedule recurring scans via **cron** or **Ansible Tower/AWX**.
+**Orchestrate**: Use **Ansible** to run the scan across all RHEL hosts — it's agentless (SSH), aligns with the Red Hat ecosystem, scales easily. A playbook installs `openscap-scanner` + `scap-security-guide` on each host (idempotent), runs the scan, and fetches XML + HTML results back to the control node. Schedule recurring scans via **cron** or **Ansible Tower/AWX**. (Note: OpenSCAP also ships `oscap-ssh` for ad-hoc remote scanning — our Ansible approach is the production-grade version of the same SSH-based concept, adding fleet management and Tower/AWX integration.)
 
 **Report + Monitor**: Store results in a database (Elasticsearch/PostgreSQL) for trending. Visualise in **Grafana/Kibana** — per-server compliance percentages, most-failed controls, trends over time. Set up **alerts** (Slack, PagerDuty) when compliance drops — e.g., "prod-db-01 at 78% CIS compliance, down from 95%." This gives the team a live view of fleet security posture.
 
-**Remediate (the Dependabot analogy)**: This is where AI adds practical value. As outlined in the architecture, the AI never reads raw server configs — it consumes the **structured XML output** from `oscap` only. The `oscap` report already provides Ansible/shell remediation snippets for each failure — but these are generated for a generic RHEL install. In practice, they won't always work first try: custom paths, conflicting services, environment-specific dependencies. So:
+**Remediate (the Dependabot analogy)**: This is where AI adds practical value that goes beyond what the scanner provides. As outlined in the architecture, the AI never reads raw server configs — it consumes the **structured XML output** from `oscap` only. The scanner already provides Ansible/shell remediation snippets for each failure — but these are generated for a generic RHEL install. In practice, they won't always work first try: custom paths, conflicting services, environment-specific dependencies. So:
 
 1. For each actionable failure, **generate a change request** (MR/PR) containing the remediation snippet from `oscap`.
-2. AI triages findings — prioritises by severity, flags context-dependent issues (e.g., "this server runs a legacy app, disabling TLS 1.0 might break it").
-3. When the generic fix doesn't apply cleanly, **AI helps the engineer iterate** — adjusting the remediation for the specific environment, explaining what the fix does and why.
-4. Engineer reviews and approves before remediation is applied. No auto-fixes.
+2. AI triages findings — re-prioritises by severity (in the demo, 5 of 8 findings were upgraded from OpenSCAP's "medium" to "critical" or "high" based on real-world impact). It also identifies **attack chains** — where individual findings combine into compound threats (e.g., "these 4 shadow/gshadow permission issues together expose password hashes").
+3. AI adds context a scanner can't provide: **verification commands** (confirm the fix worked without a full rescan), **rollback instructions** (undo if the fix breaks something), **change window guidance** (safe to apply live vs. requires service restart), and **automation readiness** (safe to script vs. needs human review).
+4. When the generic fix doesn't apply cleanly, **AI helps the engineer iterate** — adjusting the remediation for the specific environment, explaining what the fix does and why.
+5. Engineer reviews and approves before remediation is applied. No auto-fixes.
 
 **CI/CD integration**: Integrate the scan into the deployment pipeline — a server that fails baseline CIS checks doesn't get promoted to production. Shift compliance left.
 
-[Source: Ansible docs, Dependabot workflow analogy, general DevOps/CI pipeline patterns]
+[Source: Ansible docs, Dependabot workflow analogy, OpenSCAP oscap-ssh docs, demo implementation experience]
 
 ---
 
@@ -234,7 +253,7 @@ Three layers: **scan**, **orchestrate**, **report** (as shown in the architectur
 **Where each fits in the Dependabot-style pipeline:**
 
 - **Programmatic (`oscap`)** does the scanning — this must be deterministic and auditable. Auditors need reproducible results. An LLM-generated compliance report won't pass scrutiny.
-- **AI** adds value *after* the scan: triaging findings by risk, explaining *why* a control matters, drafting the remediation MR description, and flagging context-dependent edge cases.
+- **AI** adds value *after* the scan: triaging findings by risk, explaining *why* a control matters, identifying attack chains across findings, providing verification commands and rollback instructions, drafting the remediation MR description, and flagging context-dependent edge cases. In the demo, this turned 8 undifferentiated "medium" findings into 2 critical, 3 high, 2 medium, 1 low — with the 4 shadow/gshadow findings grouped as an attack chain.
 - **The hybrid approach is optimal**: `oscap` is the source of truth, AI makes the output actionable and human-readable. Similar to the pattern at my work — deterministic extraction for the compliance-critical layer, LLM generation for the human-facing layer.
 - **Never let an LLM be the sole source of truth** for a compliance determination.
 - **AI must be grounded and evaluated** (Q5 principles in action): the architecture constrains AI input (XML only), validates AI output (grounding check — every rule it mentions must exist in the scan), and gates AI actions (human approval). The demo's `eval.py` scores this against known ground truth.
@@ -259,7 +278,9 @@ Structure around three questions:
 "This tool automatically checks whether our servers are configured securely, based on industry-standard security guidelines (CIS Benchmarks). Think of it as an automated safety inspection for IT infrastructure — like a building inspector checking fire exits and electrical wiring."
 
 **"How accurate is it?"**
-Show a concrete comparison: run the tool on a sample server, have a senior engineer manually verify 10–15 controls, present results side-by-side. The tool produces identical results to manual review, but in seconds instead of hours. Use a dashboard (Grafana) showing green/amber/red status per server with a clear compliance percentage (e.g., "94% compliant across 50 servers"). Let stakeholders drill down per server.
+Show a concrete comparison: run the tool on a sample server, have a senior engineer manually verify 10–15 controls, present results side-by-side. The tool produces identical results to manual review, but in seconds instead of hours. Use a dashboard showing green/amber/red status per server with a clear compliance percentage (e.g., “94% compliant across 50 servers”). Let stakeholders drill down per server.
+
+The demo's UI shows this in practice: findings sorted by severity as MR-style cards, with findings **tagged ⬆ Upgraded when the AI rates them higher** than the scanner alone — making it immediately visible where human attention is most needed. **Attack chains** surface compound threats (e.g., “4 file permission issues together expose password hashes”) that no single-finding report would highlight.
 
 If the tool includes an LLM component, be transparent: "The AI helps explain findings in plain English and suggests fixes, but every compliance determination is made by deterministic checks, not AI guesswork. The AI is the interpreter, not the inspector."
 
@@ -274,13 +295,13 @@ Demo: adding a new server in under a minute, switching compliance profiles (CIS 
 
 #### 2. Considerations for scaling in the future
 
-The demo proves the pipeline works end-to-end but has clear limitations (no real server access, no scheduling, ephemeral storage, unvalidated AI beyond known test cases). Scaling to production:
+The demo proves the pipeline works end-to-end with real SSH-based scanning and AI triage (8 failures detected, 5 re-prioritised by AI, 1 attack chain identified). Scaling to production:
 
 | Area | Problem | Solution | Scale path |
 |---|---|---|---|
-| **Server access** | Demo scans locally, no SSH | Ansible fans out via SSH, one inventory line per server | Ansible → Tower/AWX → Red Hat Satellite (native OpenSCAP) |
-| **Scheduling** | Manual/one-shot | Cron or Tower scheduler for recurring scans | Drift detection: compare current vs. last state, alert on changes |
-| **Data** | Results in ephemeral volume | PostgreSQL/Elasticsearch with retention policies | Feeds into SIEM/GRC, enables queries like "all servers failing control 5.2.5 in last 30 days" |
+| **Server access** | Demo uses SSH within containers | Ansible fans out via SSH, one inventory line per server | Ansible → Tower/AWX → Red Hat Satellite (native OpenSCAP) |
+| **Scheduling** | Scan on boot + manual /rescan | Cron or Tower scheduler for recurring scans | Drift detection: compare current vs. last state, alert on changes |
+| **Data** | Results in container filesystem | PostgreSQL/Elasticsearch with retention policies | Feeds into SIEM/GRC, enables queries like "all servers failing control 5.2.5 in last 30 days" |
 | **AI reliability** | Mock triage or single LLM call | Ground-truth test sets, grounding checks, severity scoring | Monitor LLM quality drift over time; eval pipeline runs on every model update |
 | **Access control** | Single user | RBAC: DB team sees their servers, networking sees theirs, leadership sees aggregate | Tower/AWX provides this natively |
 | **OS diversity** | Rocky 9 only | Multiple CIS profiles + OS-specific SCAP content per target | CIS K8s Benchmark for containers; cloud APIs (SSM, Arc) for cloud-native |

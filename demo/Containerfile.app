@@ -13,6 +13,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY triage.py app.py eval.py ./
 COPY templates/ templates/
+COPY static/ static/
 COPY ansible/ ansible/
 COPY start.sh .
 RUN chmod +x start.sh

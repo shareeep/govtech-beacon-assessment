@@ -1,130 +1,127 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8">
   <title>CIS Compliance Triage</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f6f8fa; color: #24292f; padding: 2rem; max-width: 960px; margin: 0 auto; }
-    h1 { margin-bottom: 0.5rem; }
-    .subtitle { color: #656d76; margin-bottom: 1rem; }
-    .toolbar { display: flex; gap: 0.75rem; margin-bottom: 1.5rem; flex-wrap: wrap; align-items: center; }
-    .toolbar a { padding: 0.4rem 0.75rem; border-radius: 6px; font-size: 0.85rem; font-weight: 600; text-decoration: none; border: 1px solid #d0d7de; color: #24292f; background: #fff; }
-    .toolbar a:hover { background: #f3f4f6; }
-    .toolbar a.primary { background: #0550ae; color: #fff; border-color: #0550ae; }
-    .toolbar a.primary:hover { background: #0347a0; }
-    .summary { display: flex; gap: 1rem; margin-bottom: 1.5rem; }
-    .summary .badge { padding: 0.5rem 1rem; border-radius: 6px; font-weight: 600; font-size: 0.9rem; }
-    .badge.critical { background: #ffebe9; color: #82071e; border: 1px solid #ffcecb; }
-    .badge.high { background: #fff8c5; color: #6a5300; border: 1px solid #f5e047; }
-    .badge.medium { background: #ddf4ff; color: #0550ae; border: 1px solid #80ccff; }
-    .badge.low { background: #dafbe1; color: #116329; border: 1px solid #82e596; }
-    .card { background: #fff; border: 1px solid #d0d7de; border-radius: 8px; margin-bottom: 1rem; overflow: hidden; }
-    .card-header { padding: 0.75rem 1rem; display: flex; align-items: center; gap: 0.75rem; border-bottom: 1px solid #d0d7de; }
-    .card-header .severity { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 12px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; }
-    .card-header .title { font-weight: 600; }
-    .card-header .rule-id { color: #656d76; font-size: 0.85rem; margin-left: auto; font-family: monospace; }
-    .card-body { padding: 1rem; }
-    .card-body p { margin-bottom: 0.5rem; line-height: 1.5; }
-    .card-body .label { font-weight: 600; color: #656d76; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; }
-    .card-body pre { background: #f6f8fa; padding: 0.75rem; border-radius: 6px; font-size: 0.85rem; margin-top: 0.25rem; margin-bottom: 0.75rem; border: 1px solid #d0d7de; white-space: pre-wrap; word-wrap: break-word; }
-    .source-label { font-size: 0.7rem; color: #656d76; font-weight: 400; text-transform: none; letter-spacing: normal; }
-    .intentional { background: #fff8c5; padding: 0.5rem 0.75rem; border-radius: 6px; font-size: 0.85rem; margin-top: 0.5rem; }
-    .mr-actions { display: flex; gap: 0.5rem; margin-top: 1rem; }
-    .btn { padding: 0.4rem 1rem; border-radius: 6px; font-size: 0.85rem; font-weight: 600; cursor: pointer; border: 1px solid; text-decoration: none; display: inline-block; }
-    .btn-detail { background: #0550ae; color: #fff; border-color: #0550ae; }
-    .btn-detail:hover { background: #0347a0; }
-    .btn-todo { background: #fff; color: #24292f; border-color: #d0d7de; }
-    .btn-todo:hover { background: #f3f4f6; }
-    .btn-todo.added { background: #dafbe1; color: #116329; border-color: #82e596; }
-    .btn-todo.added:hover { background: #aceebb; }
-    .empty { text-align: center; padding: 3rem; color: #656d76; }
-    .legend { background: #fff; border: 1px solid #d0d7de; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1.5rem; font-size: 0.85rem; color: #656d76; line-height: 1.6; }
-    .detail-panel { display: none; background: #f6f8fa; border-top: 1px solid #d0d7de; padding: 1rem; font-size: 0.85rem; }
-    .detail-panel.open { display: block; }
-    .detail-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; margin-bottom: 0.75rem; }
-    .detail-grid .detail-item .detail-label { font-weight: 600; color: #656d76; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.2rem; }
-    .detail-grid .detail-item .detail-value { font-size: 0.85rem; }
-    .complexity-trivial { color: #116329; } .complexity-easy { color: #116329; }
-    .complexity-moderate { color: #6a5300; } .complexity-complex { color: #82071e; }
-
-    /* Attack chain styles */
-    .chain-section { margin-bottom: 2rem; }
-    .chain-section h2 { font-size: 1.1rem; margin-bottom: 0.75rem; }
-    .chain-card { background: #fff; border: 2px solid #ffcecb; border-radius: 8px; margin-bottom: 0.75rem; padding: 1rem; }
-    .chain-card.chain-high { border-color: #f5e047; }
-    .chain-card.chain-medium { border-color: #80ccff; }
-    .chain-header { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem; }
-    .chain-header .chain-name { font-weight: 700; font-size: 0.95rem; }
-    .chain-narrative { line-height: 1.5; margin-bottom: 0.5rem; }
-    .chain-impact { font-weight: 600; color: #82071e; margin-bottom: 0.5rem; }
-    .chain-findings { display: flex; gap: 0.4rem; flex-wrap: wrap; }
-    .chain-finding-tag { background: #f6f8fa; border: 1px solid #d0d7de; border-radius: 4px; padding: 0.15rem 0.5rem; font-size: 0.8rem; font-family: monospace; cursor: pointer; color: #0550ae; }
-    .chain-finding-tag:hover { background: #ddf4ff; }
-
-    /* Detail sub-sections */
-    .detail-section { margin-bottom: 0.75rem; }
-    .detail-section-label { font-weight: 600; color: #656d76; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.2rem; }
-    .detail-section pre { background: #fff; padding: 0.5rem 0.75rem; border-radius: 4px; font-size: 0.82rem; border: 1px solid #d0d7de; white-space: pre-wrap; word-wrap: break-word; margin: 0; }
-    .detail-section .note { font-size: 0.82rem; color: #656d76; margin-top: 0.15rem; }
-    .related-tags { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.25rem; }
-    .related-tag { background: #ddf4ff; border: 1px solid #80ccff; border-radius: 4px; padding: 0.1rem 0.5rem; font-size: 0.78rem; font-family: monospace; cursor: pointer; color: #0550ae; }
-    .related-tag:hover { background: #b6e3ff; }
-
-    .window-live { color: #116329; } .window-restart_required { color: #6a5300; } .window-maintenance_window { color: #82071e; }
-    .auto-fully_automatable { color: #116329; } .auto-needs_review { color: #6a5300; } .auto-manual_only { color: #82071e; }
-
-    .upgraded-tag { display: inline-block; background: #fff8c5; color: #6a5300; border: 1px solid #f5e047; border-radius: 4px; padding: 0.1rem 0.4rem; font-size: 0.7rem; font-weight: 600; margin-left: 0.25rem; }
-    .upgrade-summary { background: #fff8c5; border: 1px solid #f5e047; border-radius: 6px; padding: 0.4rem 0.75rem; font-size: 0.85rem; color: #6a5300; margin-bottom: 1.5rem; }
-  </style>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
+
 <body>
-  <h1>CIS Compliance Triage</h1>
-  <p class="subtitle">{{ data.total_failures }} failed controls triaged</p>
+  <div class="dashboard-header">
+    <div class="header-left">
+      <h1>CIS Compliance Triage</h1>
+      <p class="subtitle">{{ data.total_failures }} failed controls triaged</p>
 
-  <div class="toolbar">
-    <a href="/report" target="_blank" class="primary">View Full OpenSCAP Report</a>
-    <a href="/rescan">Rescan Now</a>
-  </div>
+      <div class="toolbar">
+        {# System selector — one target now, scales to fleet in production #}
+        <div class="system-selector">
+          <label for="system-select">System</label>
+          <select id="system-select">
+            <option selected>{{ data.system.hostname if data.system else 'target' }} — {{ data.system.os if data.system else 'Rocky Linux 9' }}</option>
+          </select>
+        </div>
+        <a href="/report" target="_blank" class="primary">View Full OpenSCAP Report</a>
+        <a href="/rescan">Rescan Now</a>
+      </div>
 
-  <div class="summary">
-    {% for level in ['critical', 'high', 'medium', 'low'] %}
-      {% if data.summary.get(level, 0) > 0 %}
-        <span class="badge {{ level }}">{{ data.summary[level] }} {{ level }}</span>
-      {% endif %}
-    {% endfor %}
-  </div>
+      <div class="summary">
+        <div style="display: flex; gap: 1rem; align-items: center; margin-bottom: 0.75rem;">
+          {% for level in ['critical', 'high', 'medium', 'low'] %}
+          {% if data.summary.get(level, 0) > 0 %}
+          <span class="badge {{ level }}">{{ data.summary[level] }} {{ level | upper }}</span>
+          {% endif %}
+          {% endfor %}
+        </div>
 
-  {% set upgraded_count = data.findings | selectattr('oscap_severity') | list | selectattr('severity') | list | length %}
-  {% set severity_order = {'critical': 0, 'high': 1, 'medium': 2, 'low': 3} %}
-  {% set upgraded_findings = [] %}
-  {% for f in data.findings %}
-    {% if f.oscap_severity and severity_order.get(f.severity, 3) < severity_order.get(f.oscap_severity, 3) %}
-      {% if upgraded_findings.append(f.short_name) %}{% endif %}
+        {% if data.timing %}
+        <div class="timing-badge"
+          title="Time for AI to triage {{ data.timing.num_findings }} findings using {{ data.timing.model }}">
+          <span style="display: flex; align-items: center; gap: 0.3rem;">⏱ {{ data.timing.triage_seconds }}s</span>
+          <span class="timing-detail">({{ data.timing.model }}, {{ data.timing.num_findings }} findings &rarr; {{ '%.1f'
+            | format(data.timing.triage_seconds / data.timing.num_findings) }}s/finding)</span>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="header-right">
+      {% set upgraded_count = data.findings | selectattr('oscap_severity') | list | selectattr('severity') | list |
+      length %}
+      {% set severity_order = {'critical': 0, 'high': 1, 'medium': 2, 'low': 3} %}
+      {% set upgraded_findings = [] %}
+      {% for f in data.findings %}
+      {% if f.oscap_severity and severity_order.get(f.severity, 3) < severity_order.get(f.oscap_severity, 3) %} {% if
+        upgraded_findings.append(f.short_name) %}{% endif %} {% endif %} {% endfor %} {% if upgraded_findings %} <div
+        class="upgrade-summary">
+        <div
+          style="display: flex; gap: 0.75rem; align-items: flex-start; flex-shrink: 0; color: var(--high-text); font-weight: 700; width: 140px; line-height: 1.4;">
+          <span style="font-size: 1.2rem; margin-top: 1px;">⬆</span>
+          <span>{{ upgraded_findings | length }} findings <br>upgraded by <br>AI</span>
+        </div>
+        <div
+          style="opacity: 0.85; font-weight: 500; border-left: 1px solid var(--high-border); padding-left: 1.25rem; flex: 1;">
+          — OpenSCAP rated these lower, but the AI flagged them as higher risk based on real-world impact.
+        </div>
+    </div>
     {% endif %}
-  {% endfor %}
 
-  {% if upgraded_findings %}
-  <div class="upgrade-summary">
-    ⬆ <strong>{{ upgraded_findings | length }} finding{{ 's' if upgraded_findings | length != 1 }} upgraded by AI</strong> — OpenSCAP rated these lower, but the AI flagged them as higher risk based on real-world impact.
+    <div class="legend">
+      <strong>What you're seeing:</strong>
+      OpenSCAP scanned this server against the CIS RHEL 9 benchmark and found {{ data.total_failures }} failures.
+      The AI reads the raw scan results and adds context a scanner can't provide: it re-prioritises severity,
+      identifies attack chains across findings, estimates fix complexity, flags rollback risks,
+      and tells you which fixes are safe to automate vs. need human review.
+      Click <em>"Details"</em> on any card for the full analysis.
+    </div>
+  </div>
+  </div>
+
+  {# ── Grounding Report ── #}
+  {% if data.grounding and data.grounding.checks %}
+  <div class="grounding-section">
+    <div class="grounding-header" onclick="this.parentElement.classList.toggle('open')">
+      <h2>
+        {% if data.grounding.passed == data.grounding.total %}
+        ✅ Grounding: {{ data.grounding.passed }}/{{ data.grounding.total }} checks passed
+        {% else %}
+        ⚠️ Grounding: {{ data.grounding.passed }}/{{ data.grounding.total }} checks passed
+        {% endif %}
+      </h2>
+      <span class="grounding-toggle">▸</span>
+    </div>
+    <div class="grounding-body">
+      <p class="grounding-explainer">
+        These checks validate the AI output <strong>programmatically against the scan data</strong> — no LLM-as-judge
+        needed. The AI only receives structured XML from OpenSCAP. Every claim it makes is verified by code:
+        rule IDs must exist in the scan, severity values must be valid, cross-references must resolve, and extreme
+        rating changes are flagged for human review.
+      </p>
+      <div class="grounding-checks">
+        {% for c in data.grounding.checks %}
+        <div class="grounding-check grounding-{{ c.status }}">
+          <span class="grounding-icon">{{ '✅' if c.status == 'pass' else ('⚠️' if c.status == 'warn' else '❌') }}</span>
+          <span class="grounding-name">{{ c.check }}</span>
+          <span class="grounding-detail">{{ c.detail }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
   </div>
   {% endif %}
-
-  <div class="legend">
-    <strong>What you're seeing:</strong>
-    OpenSCAP scanned this server against the CIS RHEL 9 benchmark and found {{ data.total_failures }} failures.
-    The AI reads the raw scan results and adds context a scanner can't provide: it re-prioritises severity,
-    identifies attack chains across findings, estimates fix complexity, flags rollback risks,
-    and tells you which fixes are safe to automate vs. need human review.
-    Click <em>"Details"</em> on any card for the full analysis.
-  </div>
 
   {# ── Attack Chain Summary ── #}
   {% if data.attack_chains %}
   <div class="chain-section">
     <h2>⚡ Attack Chains</h2>
-    <p style="color:#656d76; font-size:0.85rem; margin-bottom:0.75rem;">
-      The AI identified findings that combine into compound threats — individual "medium" findings that together become critical.
+    <p style="color: var(--text-muted); font-size:0.95rem; margin-bottom:1.25rem;">
+      The AI identified findings that combine into compound threats — individual "medium" findings that together
+      become critical.
     </p>
     {% for chain in data.attack_chains %}
     <div class="chain-card chain-{{ chain.severity }}">
@@ -138,7 +135,9 @@
       {% endif %}
       <div class="chain-findings">
         {% for name in chain.findings %}
-        <span class="chain-finding-tag" onclick="document.getElementById('card-{{ name }}')?.scrollIntoView({behavior:'smooth', block:'center'})">{{ name }}</span>
+        <span class="chain-finding-tag"
+          onclick="document.getElementById('card-{{ name }}')?.scrollIntoView({behavior:'smooth', block:'center'})">{{
+          name }}</span>
         {% endfor %}
       </div>
     </div>
@@ -149,125 +148,138 @@
   {# ── Individual Finding Cards ── #}
   <h2 style="margin-bottom:0.75rem;">📝 Findings</h2>
   {% if data.findings %}
-    {% for f in data.findings %}
-    <div class="card" id="card-{{ f.short_name }}" data-severity="{{ f.severity }}">
-      <div class="card-header">
-        <span class="severity badge {{ f.severity }}">{{ f.severity }}</span>
-        {% if f.oscap_severity and f.oscap_severity != f.severity %}
-          <span style="font-size:0.75rem; color:#656d76;" title="OpenSCAP's original rating">(was: {{ f.oscap_severity }})</span>
-          {% set sev_order = {'critical': 0, 'high': 1, 'medium': 2, 'low': 3} %}
-          {% if sev_order.get(f.severity, 3) < sev_order.get(f.oscap_severity, 3) %}
-            <span class="upgraded-tag" title="AI upgraded this from {{ f.oscap_severity }} to {{ f.severity }}">⬆ Upgraded</span>
-          {% endif %}
+  {% for f in data.findings %}
+  <div class="card" id="card-{{ f.short_name }}" data-severity="{{ f.severity }}">
+    <div class="card-header">
+      <span class="severity badge {{ f.severity }}">{{ f.severity }}</span>
+      {% if f.oscap_severity and f.oscap_severity != f.severity %}
+      <span style="font-size:0.8rem; color: var(--text-muted);" title="OpenSCAP's original rating">(was: {{
+        f.oscap_severity }})</span>
+      {% set sev_order = {'critical': 0, 'high': 1, 'medium': 2, 'low': 3} %}
+      {% if sev_order.get(f.severity, 3) < sev_order.get(f.oscap_severity, 3) %} <span class="upgraded-tag"
+        title="AI upgraded this from {{ f.oscap_severity }} to {{ f.severity }}">⬆ Upgraded</span>
+        {% endif %}
         {% endif %}
         <span class="title">{{ f.short_name | replace('_', ' ') | title }}</span>
         <span class="rule-id">{{ f.short_name }}</span>
+    </div>
+    <div class="card-body">
+      <p>{{ f.explanation }}</p>
+
+      {% if f.remediation %}
+      <p class="label">Remediation</p>
+      <pre>{{ f.remediation }}</pre>
+      {% endif %}
+
+      {% if f.likely_intentional %}
+      <div class="intentional">⚠️ Possible intentional deviation — verify with the infrastructure team before
+        applying.</div>
+      {% endif %}
+
+      <div class="mr-actions">
+        <button class="btn btn-detail"
+          onclick="this.closest('.card').querySelector('.detail-panel').classList.toggle('open'); this.textContent = this.textContent === 'Details ▾' ? 'Details ▸' : 'Details ▾';">Details
+          ▸</button>
+        <button class="btn btn-todo" onclick="toggleTodo(this, '{{ f.short_name }}')">+ Add to To-Do</button>
       </div>
-      <div class="card-body">
-        <p>{{ f.explanation }}</p>
+    </div>
 
-        {% if f.remediation %}
-        <p class="label" style="margin-top: 0.75rem;">Remediation</p>
-        <pre>{{ f.remediation }}</pre>
-        {% endif %}
-
-        {% if f.likely_intentional %}
-        <div class="intentional">⚠️ Possible intentional deviation — verify with the infrastructure team before applying.</div>
-        {% endif %}
-
-        <div class="mr-actions">
-          <button class="btn btn-detail" onclick="this.closest('.card').querySelector('.detail-panel').classList.toggle('open'); this.textContent = this.textContent === 'Details ▾' ? 'Details ▸' : 'Details ▾';">Details ▸</button>
-          <button class="btn btn-todo" onclick="toggleTodo(this, '{{ f.short_name }}')">+ Add to To-Do</button>
+    <div class="detail-panel">
+      <div class="detail-grid">
+        <div class="detail-item">
+          <div class="detail-label">Fix Complexity</div>
+          <div class="detail-value complexity-{{ f.complexity or 'easy' }}">{{ (f.complexity or 'unknown') | title }}
+          </div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">Change Window</div>
+          <div class="detail-value window-{{ f.change_window or 'live' }}">{{ (f.change_window or 'unknown') |
+            replace('_', ' ') | title }}</div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">Automation</div>
+          <div class="detail-value auto-{{ f.automation_readiness or 'needs_review' }}">{{ (f.automation_readiness or
+            'unknown') | replace('_', ' ') | title }}</div>
         </div>
       </div>
 
-      <div class="detail-panel">
-        <div class="detail-grid">
-          <div class="detail-item">
-            <div class="detail-label">Fix Complexity</div>
-            <div class="detail-value complexity-{{ f.complexity or 'easy' }}">{{ (f.complexity or 'unknown') | title }}</div>
-          </div>
-          <div class="detail-item">
-            <div class="detail-label">Change Window</div>
-            <div class="detail-value window-{{ f.change_window or 'live' }}">{{ (f.change_window or 'unknown') | replace('_', ' ') | title }}</div>
-          </div>
-          <div class="detail-item">
-            <div class="detail-label">Automation</div>
-            <div class="detail-value auto-{{ f.automation_readiness or 'needs_review' }}">{{ (f.automation_readiness or 'unknown') | replace('_', ' ') | title }}</div>
-          </div>
+      {% if f.change_window_note %}
+      <p class="note" style="margin-bottom:0.75rem; color: var(--text-muted); font-size:0.9rem;">{{
+        f.change_window_note }}</p>
+      {% endif %}
+      {% if f.automation_note %}
+      <p class="note" style="margin-bottom:0.75rem; color: var(--text-muted); font-size:0.9rem;">{{ f.automation_note
+        }}</p>
+      {% endif %}
+
+      {% if f.risk_if_ignored %}
+      <div class="detail-section">
+        <div class="detail-section-label">Risk if ignored</div>
+        <p>{{ f.risk_if_ignored }}</p>
+      </div>
+      {% endif %}
+
+      {% if f.dependencies %}
+      <div class="detail-section">
+        <div class="detail-section-label">Dependencies</div>
+        <p>{{ f.dependencies }}</p>
+      </div>
+      {% endif %}
+
+      {% if f.verification_cmd %}
+      <div class="detail-section">
+        <div class="detail-section-label">Verification Command</div>
+        <pre>{{ f.verification_cmd }}</pre>
+        <p class="note">Run after applying the fix to confirm it's remediated — without re-running the full scan.</p>
+      </div>
+      {% endif %}
+
+      {% if f.rollback %}
+      <div class="detail-section">
+        <div class="detail-section-label">Rollback</div>
+        <pre>{{ f.rollback }}</pre>
+      </div>
+      {% endif %}
+
+      {% if f.related_findings %}
+      <div class="detail-section">
+        <div class="detail-section-label">Fix together with</div>
+        <div class="related-tags">
+          {% for rel in f.related_findings %}
+          <span class="related-tag"
+            onclick="document.getElementById('card-{{ rel }}')?.scrollIntoView({behavior:'smooth', block:'center'})">{{
+            rel }}</span>
+          {% endfor %}
         </div>
+      </div>
+      {% endif %}
 
-        {% if f.change_window_note %}
-        <p class="note" style="margin-bottom:0.5rem; color:#656d76; font-size:0.82rem;">{{ f.change_window_note }}</p>
-        {% endif %}
-        {% if f.automation_note %}
-        <p class="note" style="margin-bottom:0.5rem; color:#656d76; font-size:0.82rem;">{{ f.automation_note }}</p>
-        {% endif %}
-
-        {% if f.risk_if_ignored %}
-        <div class="detail-section">
-          <div class="detail-section-label">Risk if ignored</div>
-          <p>{{ f.risk_if_ignored }}</p>
+      <div class="detail-grid">
+        <div class="detail-item">
+          <div class="detail-label">OpenSCAP Severity</div>
+          <div class="detail-value">{{ f.oscap_severity or 'unknown' }}</div>
         </div>
-        {% endif %}
-
-        {% if f.dependencies %}
-        <div class="detail-section">
-          <div class="detail-section-label">Dependencies</div>
-          <p>{{ f.dependencies }}</p>
+        <div class="detail-item">
+          <div class="detail-label">AI Severity</div>
+          <div class="detail-value">{{ f.severity }}</div>
         </div>
-        {% endif %}
-
-        {% if f.verification_cmd %}
-        <div class="detail-section">
-          <div class="detail-section-label">Verification Command</div>
-          <pre>{{ f.verification_cmd }}</pre>
-          <p class="note">Run after applying the fix to confirm it's remediated — without re-running the full scan.</p>
-        </div>
-        {% endif %}
-
-        {% if f.rollback %}
-        <div class="detail-section">
-          <div class="detail-section-label">Rollback</div>
-          <pre>{{ f.rollback }}</pre>
-        </div>
-        {% endif %}
-
-        {% if f.related_findings %}
-        <div class="detail-section">
-          <div class="detail-section-label">Fix together with</div>
-          <div class="related-tags">
-            {% for rel in f.related_findings %}
-            <span class="related-tag" onclick="document.getElementById('card-{{ rel }}')?.scrollIntoView({behavior:'smooth', block:'center'})">{{ rel }}</span>
-            {% endfor %}
-          </div>
-        </div>
-        {% endif %}
-
-        <div class="detail-grid" style="margin-top:0.75rem;">
-          <div class="detail-item">
-            <div class="detail-label">OpenSCAP Severity</div>
-            <div class="detail-value">{{ f.oscap_severity or 'unknown' }}</div>
-          </div>
-          <div class="detail-item">
-            <div class="detail-label">AI Severity</div>
-            <div class="detail-value">{{ f.severity }}</div>
-          </div>
-          <div class="detail-item">
-            <a href="/report" target="_blank" style="color:#0550ae; font-size:0.82rem;">View OpenSCAP report →</a>
-          </div>
+        <div class="detail-item">
+          <a href="/report" target="_blank"
+            style="color: var(--primary); font-size:0.95rem; font-weight: 500; text-decoration: none;">View OpenSCAP
+            report →</a>
         </div>
       </div>
     </div>
-    {% endfor %}
+  </div>
+  {% endfor %}
   {% else %}
-    <div class="empty">No triage results found. Run a scan first.</div>
+  <div class="empty">No triage results found. Run a scan first.</div>
   {% endif %}
 
   <script>
     // Sort cards by severity on load
-    (function() {
-      const order = {critical: 0, high: 1, medium: 2, low: 3};
+    (function () {
+      const order = { critical: 0, high: 1, medium: 2, low: 3 };
       const cards = Array.from(document.querySelectorAll('.card[data-severity]'));
       if (!cards.length) return;
       const parent = cards[0].parentNode;
@@ -294,6 +306,6 @@
       if (el) el.textContent = todoList.size ? `(${todoList.size})` : '';
     }
   </script>
-  </script>
 </body>
+
 </html>

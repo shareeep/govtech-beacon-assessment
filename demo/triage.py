@@ -6,6 +6,7 @@ import json
 import argparse
 import os
 import sys
+import time
 import requests
 
 # XCCDF 1.2 namespace
@@ -235,19 +236,113 @@ def main():
         if not args.mock:
             print("No API key provided, using mock triage. Use --api-key or set OPENAI_API_KEY.")
         print("Running mock triage...")
+        t0 = time.time()
         triage_result = mock_triage(failures)
+        triage_duration = time.time() - t0
+        triage_mode = "mock"
     else:
         print(f"Triaging with {args.model}...")
+        t0 = time.time()
         triage_result = triage_with_ai(failures, args.api_key, args.base_url, args.model)
+        triage_duration = time.time() - t0
+        triage_mode = args.model
+
+    print(f"AI triage completed in {triage_duration:.1f}s ({triage_mode})")
 
     triaged = triage_result["findings"]
     attack_chains = triage_result.get("attack_chains", [])
 
-    # Grounding check: ensure AI didn't hallucinate rules that weren't in the scan
+    # ── Grounding checks ──────────────────────────────────────────────
+    # These are all *programmatic* — no LLM-as-judge needed.
+    # The principle: constrain and verify AI output against source data
+    # using deterministic code.
     parsed_names = {f["short_name"]: f for f in failures}
     triaged_names = {f["short_name"] for f in triaged}
+
+    VALID_SEVERITIES = {"critical", "high", "medium", "low"}
+    REQUIRED_FIELDS = ["short_name", "severity", "explanation", "remediation"]
+
+    checks = []  # list of {"check", "status": "pass"|"warn"|"fail", "detail"}
+
+    # Check 1: Rule existence — AI can only reference rules from the scan
     hallucinated = triaged_names - set(parsed_names)
     missing = set(parsed_names) - triaged_names
+    checks.append({
+        "check": "Rule IDs match scan results",
+        "status": "fail" if hallucinated else "pass",
+        "detail": f"{len(hallucinated)} hallucinated rule(s): {', '.join(hallucinated)}" if hallucinated
+                  else f"All {len(triaged)} AI-returned rules exist in scan"
+    })
+    if missing:
+        checks.append({
+            "check": "All scan failures covered",
+            "status": "warn",
+            "detail": f"{len(missing)} failure(s) not in AI output (may have been filtered/merged): {', '.join(missing)}"
+        })
+
+    # Check 2: Required fields present on every finding
+    fields_missing = []
+    for f in triaged:
+        for field in REQUIRED_FIELDS:
+            if not f.get(field):
+                fields_missing.append(f"{f.get('short_name', '?')}.{field}")
+    checks.append({
+        "check": "Required fields present",
+        "status": "fail" if fields_missing else "pass",
+        "detail": f"Missing: {', '.join(fields_missing[:5])}" if fields_missing
+                  else f"All {len(REQUIRED_FIELDS)} required fields present on every finding"
+    })
+
+    # Check 3: Severity values are valid
+    invalid_severities = [f["short_name"] for f in triaged if f.get("severity") not in VALID_SEVERITIES]
+    checks.append({
+        "check": "Severity values valid",
+        "status": "fail" if invalid_severities else "pass",
+        "detail": f"Invalid severity on: {', '.join(invalid_severities)}" if invalid_severities
+                  else f"All severities in {VALID_SEVERITIES}"
+    })
+
+    # Check 4: Related findings all reference real scan results
+    bad_refs = []
+    for f in triaged:
+        for ref in f.get("related_findings", []):
+            if ref not in parsed_names:
+                bad_refs.append(f"{f['short_name']} -> {ref}")
+    checks.append({
+        "check": "Related findings reference valid rules",
+        "status": "fail" if bad_refs else "pass",
+        "detail": f"Invalid references: {', '.join(bad_refs)}" if bad_refs
+                  else "All related_findings references exist in scan"
+    })
+
+    # Check 5: Attack chain findings all reference real scan results
+    bad_chain_refs = []
+    for chain in attack_chains:
+        for ref in chain.get("findings", []):
+            if ref not in parsed_names:
+                bad_chain_refs.append(f"{chain.get('name', '?')} -> {ref}")
+    checks.append({
+        "check": "Attack chain findings reference valid rules",
+        "status": "fail" if bad_chain_refs else "pass",
+        "detail": f"Invalid references: {', '.join(bad_chain_refs)}" if bad_chain_refs
+                  else "All attack chain finding references exist in scan"
+    })
+
+    # Check 6: Severity upgrade plausibility — flag extreme jumps (low→critical = 3 levels)
+    severity_rank = {"low": 0, "medium": 1, "high": 2, "critical": 3, "unknown": 1}
+    extreme_upgrades = []
+    for f in triaged:
+        oscap_sev = parsed_names.get(f["short_name"], {}).get("oscap_severity", "unknown")
+        ai_rank = severity_rank.get(f.get("severity"), 1)
+        oscap_rank = severity_rank.get(oscap_sev, 1)
+        if ai_rank - oscap_rank >= 3:  # jumped 3+ levels
+            extreme_upgrades.append(f["short_name"])
+    checks.append({
+        "check": "No extreme severity jumps (3+ levels)",
+        "status": "warn" if extreme_upgrades else "pass",
+        "detail": f"Large upgrade on: {', '.join(extreme_upgrades)} — verify justification" if extreme_upgrades
+                  else "All severity changes within 2 levels of OpenSCAP rating"
+    })
 
     # Merge oscap_severity from parsed data into AI triage results
     for f in triaged:
@@ -255,15 +350,22 @@ def main():
         if parsed and "oscap_severity" not in f:
             f["oscap_severity"] = parsed.get("oscap_severity", "unknown")
 
-    if hallucinated:
-        print(f"\n⚠️  GROUNDING ISSUE: AI returned {len(hallucinated)} rule(s) NOT in scan results:")
-        for h in hallucinated:
-            print(f"   - {h}")
-    if missing:
-        print(f"\nℹ️  {len(missing)} parsed failure(s) not in AI output (may have been filtered/merged)")
+    passed = sum(1 for c in checks if c["status"] == "pass")
+    total_checks = len(checks)
+    print(f"\nGrounding: {passed}/{total_checks} checks passed")
+    for c in checks:
+        icon = "✅" if c["status"] == "pass" else ("⚠️" if c["status"] == "warn" else "❌")
+        print(f"  {icon} {c['check']}: {c['detail']}")
 
     output = {
         "total_failures": len(failures),
+        "system": {
+            "hostname": os.path.basename(os.path.dirname(args.results)) or "target",
+            "profile": "CIS Level 1 — Server",
+            "profile_id": "cis_server_l1",
+            "os": "Rocky Linux 9",
+            "scan_source": "OpenSCAP + SCAP Security Guide",
+        },
         "findings": triaged,
         "attack_chains": attack_chains,
         "summary": {
@@ -275,6 +377,14 @@ def main():
         "grounding": {
             "hallucinated_rules": list(hallucinated),
             "missing_from_triage": list(missing),
+            "checks": checks,
+            "passed": passed,
+            "total": total_checks,
+        },
+        "timing": {
+            "triage_seconds": round(triage_duration, 2),
+            "model": triage_mode,
+            "num_findings": len(failures),
         }
     }
 
